@@ -162,8 +162,8 @@ catkin_package(
 #)
 
 catkin_install_python(PROGRAMS
-  scripts/rbx_robot_mgr.py
-  scripts/ardupilot_rbx_node.py
+  #scripts/rbx_robot_mgr.py
+  #scripts/ardupilot_rbx_node.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
