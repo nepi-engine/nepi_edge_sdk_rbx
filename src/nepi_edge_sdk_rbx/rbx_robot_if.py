@@ -234,7 +234,8 @@ class ROSIDXSensorIF:
                 self.setMotorControlFunction(m_ind,m_sr)
                 
         else:
-            self.update_error_msg("Ignoring Set Motor Control msg, Manual Controls not Ready")     self.setMotorControlRatio(new_motor_ctrl)
+            self.update_error_msg("Ignoring Set Motor Control msg, Manual Controls not Ready")     
+
         
 
     ### Callback to set home
