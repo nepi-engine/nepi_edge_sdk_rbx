@@ -16,6 +16,7 @@ import serial.tools.list_ports
 import subprocess
 
 from mavros_msgs.srv import VehicleInfoGet
+from mavros_msgs.msg import VehicleInfo
 #from nepi_edge_sdk_rbx import ardupilot_rbx_node
 
 #Define Discovery Search Parameters
@@ -44,6 +45,7 @@ def mavlink_discover(active_port_list):
   global mavlink_port_list
   global mavlink_sysid_list
   global mavlink_compid_list
+  global mavlink_info_list
 
   node_name = rospy.get_name().split('/')[-1] + '/mavlink_auto_discovery'
   base_namespace = rospy.get_namespace()
@@ -153,10 +155,10 @@ def mavlink_discover(active_port_list):
             mavlink_port_list.append(port_str)
             mavlink_node_list.append(mavlink_node_name)
             mavlink_subproc_list.append(mp)
- #           mavlink_ardu_node_list.append(mavlink_ardu_node_name)
- #           mavlink_ardu_subproc_list.append(mpa)
             mavlink_sysid_list.append(sys_id)
             mavlink_compid_list.append(comp_id)
+ #           mavlink_ardu_node_list.append(mavlink_ardu_node_name)
+ #           mavlink_ardu_subproc_list.append(mpa)
             break # Don't check any more baud rates since this one was already successful
           except:
             rospy.logerr("%s: Failed to start %s", node_name, mavlink_node_name)
@@ -193,6 +195,7 @@ def mavlink_discover(active_port_list):
         # additional aliveness check logic:
         #response = capability_service()
         vehicle_info_query(sysid=sysid, compid=compid, get_all=False)
+ 
       except Exception as e: # Any exception indicates that the service call failed
         rospy.logwarn('%s: Node %s is no longer responding to vehicle info queries (%s)', node_name, node, str(e))
         purge_node = True
@@ -241,3 +244,5 @@ def mavlink_discover(active_port_list):
       del mavlink_compid_list[i]
   
   return active_port_list
+
+
