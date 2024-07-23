@@ -773,10 +773,13 @@ class ROSIDXSensorIF:
         NEPI_RBX_SET_CMD_TIMEOUT_TOPIC = NEPI_RBX_NAMESPACE + "set_cmd_timeout" # Int Seconds  - Any command that changes ready state
         NEPI_RBX_SET_IMAGE_TOPIC = NEPI_RBX_NAMESPACE + "set_image_topic" # full or partial ROS namespace
         NEPI_RBX_ENABLE_IMAGE_OVERLAY_TOPIC= NEPI_RBX_NAMESPACE + "enable_image_overlay" # Enable/Disable status info overlay on image
+
+        #Extra Function
         NEPI_RBX_SET_PROCESS_NAME_TOPIC = NEPI_RBX_NAMESPACE + "set_process_name"  # string name of current process
-        NEPI_RBX_SET_MOTOR_CONTROL_TOPIC = NEPI_RBX_NAMESPACE + "set_motor_control"  # Accepts update when Manual Motor Control Mode is Enabled
+
 
         # NEPI RBX Driver Control Subscriber Topics
+        NEPI_RBX_SET_MOTOR_CONTROL_TOPIC = NEPI_RBX_NAMESPACE + "set_motor_control"  # Accepts update when Manual Motor Control Mode is Enabled
         NEPI_RBX_GO_ACTION_TOPIC = NEPI_RBX_NAMESPACE + "go_action"  # Int to Defined Dictionary self.actions
         NEPI_RBX_GO_HOME_TOPIC = NEPI_RBX_NAMESPACE + "go_home" # Ignored if any active goto processes
         NEPI_RBX_GO_STOP_TOPIC = NEPI_RBX_NAMESPACE + "go_stop" # Aborts any active goto processes
