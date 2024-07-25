@@ -683,8 +683,11 @@ class ROSRBXRobotIF:
         if fake_gps_namespace is not None:
           self.has_fake_gps = True
           self.capabilities_report.has_fake_gps = self.has_fake_gps
-          rospy.Subscriber("~rbx/set_fake_gps_enable", Bool, self.fakeGPSEnableCb)
-          self.fake_gps_enable_pub = rospy.Publisher(fake_gps_namespace + "set_enable", Bool, queue_size=1)
+          rospy.loginfo("RBX_IF: Waiting for fake gps subscriber at: " + fake_gps_namespace + "enable")
+          nepi_ros.wait_for_topic(fake_gps_namespace + "enable")
+          time.sleep(1)
+          rospy.Subscriber("~rbx/enable_fake_gps", Bool, self.fakeGPSEnableCb)
+          self.fake_gps_enable_pub = rospy.Publisher(fake_gps_namespace + "enable", Bool, queue_size=1)
           rospy.Subscriber("~rbx/reset_fake_gps", Empty, self.fakeGPSResetCb)
           self.fake_gps_reset_pub = rospy.Publisher(fake_gps_namespace + "reset",Empty, queue_size=1)
           rospy.loginfo("Setting up fake gps publishers on namespace: " + fake_gps_namespace)

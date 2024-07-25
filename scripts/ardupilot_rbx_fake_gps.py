@@ -113,6 +113,7 @@ class ArdupilotFakeGPS(object):
       if "mavlink" in name:
         mav_node = name
     node_name = mav_node.replace("mavlink","fake_gps")
+    rospy.loginfo("RBX_FAKE_GPS: Got fake gps node name: " + node_name)
     rospy.init_node
     rospy.init_node(name = node_name)
     rospy.loginfo("RBX_FAKE_GPS: Launching node named: " + node_name)
@@ -125,7 +126,7 @@ class ArdupilotFakeGPS(object):
     self.rbx_cap_modes = []
     self.rbx_cap_actions = []
     self.current_location_wgs84_geo = None
-    self.current_heading_deg = None
+    self.current_heading_deg = 0
     self.current_home_wgs84_geo = None
     self.navpose_update_interval = 0.1
     self.fake_gps_ready = True
@@ -143,29 +144,29 @@ class ArdupilotFakeGPS(object):
 
     rospy.loginfo("RBX_FAKE_GPS: Start Home GEO Location: " + str(self.current_home_wgs84_geo))
 
-    self.nepi_nav_service_name = nepi_ros.get_base_namespace() + "nav_pose_query"
+    
 
     # MAVLINK Fake GPS Publish Topic
     MAVLINK_HILGPS_TOPIC = MAVLINK_NAMESPACE + "hil/gps"
     rospy.loginfo("RBX_FAKE_GPS: Will publish fake gps on mavlink topic: " + MAVLINK_HILGPS_TOPIC)
     self.mavlink_pub = rospy.Publisher(MAVLINK_HILGPS_TOPIC, HilGPS, queue_size=1)
 
-    # Start update heading callback 
+    # Start navpose callbacks
+    self.nepi_nav_service_name = nepi_ros.get_base_namespace() + "nav_pose_query"
+    rospy.loginfo("RBX_FAKE_GPS: will call NEPI navpose service for current heading at: " + self.nepi_nav_service_name)
     rospy.Timer(rospy.Duration(self.navpose_update_interval), self.update_current_heading_callback)
-    while self.current_heading_deg is None and not rospy.is_shutdown():
-      rospy.loginfo("RBX_FAKE_GPS: Waiting for current heading from navpose service call")
-      nepi_ros.sleep(1,10)
-      #Home fake gps publish and print callbacks
-      rospy.loginfo("RBX_FAKE_GPS: Fake gps publishing to " + MAVLINK_HILGPS_TOPIC)
-      rospy.Timer(rospy.Duration(self.gps_publish_interval_sec), self.fake_gps_pub_callback)
+    #Home fake gps publish and print callbacks
+    rospy.loginfo("RBX_FAKE_GPS: Fake gps publishing to " + MAVLINK_HILGPS_TOPIC)
+    rospy.Timer(rospy.Duration(self.gps_publish_interval_sec), self.fake_gps_pub_callback)
 
    # Setup RBX driver interfaces
-    robot_namespace = rospy.get_name().replace("fake_gps","ardupilot")
-    rospy.loginfo("RBX_ARDU: Waiting for RBX node that includes string: " + robot_namespace)
+    rospy.loginfo("RBX_FAKE_GPS: Got fake gps node name: " + node_name)
+    robot_namespace = node_name.get_name().replace("fake_gps","ardupilot")
+    rospy.loginfo("RBX_FAKE_GPS: Waiting for RBX node that includes string: " + robot_namespace)
     robot_namespace = nepi_ros.wait_for_node(robot_namespace)
-    robot_namespace = robot_namespace + "rbx"
+    robot_namespace = robot_namespace.split("/rbx")[0] + "/"
     rbx_namespace = (robot_namespace + 'rbx/')
-    rospy.loginfo("RBX_ARDU: Found rbx namespace: " + rbx_namespace)
+    rospy.loginfo("RBX_FAKE_GPS: Found rbx namespace: " + rbx_namespace)
 
     # NEPI RBX Caps Service
     caps_topic = rbx_namespace + "capabilities_query"
@@ -181,7 +182,7 @@ class ArdupilotFakeGPS(object):
 
         
     # Create Fake GPS controls subscribers
-    rospy.Subscriber("~set_enable", Bool, self.fakeGPSEnableCB)
+    rospy.Subscriber("~enable", Bool, self.fakeGPSEnableCB)
     rospy.Subscriber("~reset",Empty, self.fakeGPSResetCb)
     rospy.Subscriber("~goto_position", RBXGotoPosition, self.fakeGPSGoPosCB)
     rospy.Subscriber("~goto_location", RBXGotoLocation, self.fakeGPSGoLocCB)
@@ -190,7 +191,10 @@ class ArdupilotFakeGPS(object):
     rospy.Subscriber("~set_home_current", Empty, self.fakeGPSSetHomeCurCB)
     rospy.Subscriber("~set_mode", UInt8, self.fakeGPSModeCB)
     rospy.Subscriber("~go_action", UInt8, self.fakeGPSActionCB)
- 
+
+    self.status_pub = rospy.Publisher("~status", Bool, queue_size=1, latch = True)
+    time.sleep(1)
+    self.status_pub.publish(self.fake_gps_enabled)
 
     ## Initiation Complete
     rospy.loginfo("RBX_FAKE_GPS: Initialization Complete")
@@ -342,6 +346,7 @@ class ArdupilotFakeGPS(object):
       rospy.loginfo("RBX_FAKE_GPS: Received set fake gps enable message")
       rospy.loginfo(msg)
       self.fake_gps_enabled = msg.data
+      self.status_pub.publish(self.fake_gps_enabled)
 
   ### Callback to set home
   def fakeGPSSetHomeCB(self,geo_msg):
