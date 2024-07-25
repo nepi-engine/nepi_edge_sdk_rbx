@@ -143,10 +143,11 @@ catkin_package(
 
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
-#install(PROGRAMS
-#    scripts/zed_calibration_mgr.py
-#    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-#)
+install(PROGRAMS
+    scripts/ardupilot_rbx_fake_gps.py
+    scripts/ardupilot_rbx_node.py
+    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
 
 ## Mark executables and/or libraries for installation
 #install(TARGETS argus_multicam_node

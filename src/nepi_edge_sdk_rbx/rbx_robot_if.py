@@ -963,7 +963,6 @@ class ROSRBXRobotIF:
         error_bounds.max_stabilize_time_s = rospy.get_param('~rbx/stabilized_sec', self.init_stabilized_sec)
         self.rbx_info.error_bounds = error_bounds
         self.rbx_info.cmd_timeout = rospy.get_param('~rbx/cmd_timeout', self.init_cmd_timeout)
-        self.rbx_info.image_source = rospy.get_param('~rbx/image_source', self.init_image_source)
         self.rbx_info.image_status_overlay = rospy.get_param('~rbx/image_status_overlay', self.init_image_status_overlay) 
         self.rbx_info.state = self.getStateIndFunction()
         self.rbx_info.mode = self.getModeIndFunction()
@@ -976,29 +975,36 @@ class ROSRBXRobotIF:
         self.rbx_info.home_alt = home_location[2]
 
        ## Update image source topic and subscriber if changed from last time.
-        if self.rbx_info.image_source != self.rbx_image_source_last:
-        #  If currently set, first unregister current image topic
-            if self.rbx_image_source_last != "None": 
-              try:
-                self.rbx_image_sub.unregister()
-                rospy.loginfo("RBX_IF: Unsubscribed from image source: " + self.rbx_info.image_source)
-                time.sleep(1)
-              except Exception as e:
-                rospy.loginfo(e)
-            # Try to find and subscribe to new image source topic
-            #rospy.loginfo("RBX_IF: Looking for topic: " + self.rbx_info.image_source)
-            image_topic = nepi_ros.find_topic(self.rbx_info.image_source)
-            rospy.loginfo("RBX_IF: Image source search returned: " + image_topic)
-            if image_topic != "None":  # If image topic exists subscribe
-                self.rbx_image_sub = rospy.Subscriber(image_topic, Image, self.imageSubscriberCb, queue_size = 1)
-                self.rbx_image_source_last = self.rbx_info.image_source
-                self.rbx_info.image_source = image_topic
-                rospy.loginfo("RBX_IF: Subscribed to new image source: " + image_topic)
+        image_source = rospy.get_param('~rbx/image_source', self.rbx_info.image_source)
+        if self.rbx_info.image_source != image_source:
+          rospy.loginfo("RBX_IF: Looking for new image source: " + image_source)
+          #  If currently set, first unregister current image topic
+          if image_source != "None": 
+            try:
+              self.rbx_image_sub.unregister()
+              rospy.loginfo("RBX_IF: Unsubscribed from image source: " + self.rbx_info.image_source)
+              time.sleep(1)
+            except Exception as e:
+              rospy.loginfo(e)
+          # Try to find and subscribe to new image source topic
+          #rospy.loginfo("RBX_IF: Looking for topic: " + self.rbx_info.image_source)
+          if image_topic != "None":  # If image topic exists subscribe
+            image_topic = nepi_ros.find_topic(image_source)
+            rospy.loginfo("RBX_IF: Found image topic: " + image_topic)
+            if image_topic != "":
+              self.rbx_image_sub = rospy.Subscriber(image_topic, Image, self.imageSubscriberCb, queue_size = 1)
+              self.rbx_image_source_last = self.rbx_info.image_source
+              self.rbx_info.image_source = image_topic
+              rospy.loginfo("RBX_IF: Subscribed to new image topic: " + image_topic)
             else:
-                self.update_error_msg("Unable to find image topic " + self.rbx_info.image_source)
-                self.rbx_info.image_source = "None"
-                self.cv2_img = self.rbx_image_blank # Set to blank image if source topic is cleared.
-            rospy.set_param('~rbx/image_source', self.rbx_info.image_source)
+              self.update_error_msg("RBX_IF: Unable to find image topic " + image_topic + ", setting to None")
+              self.rbx_info.image_source = "None"
+              self.cv2_img = self.rbx_image_blank # Set to blank image if source topic is cleared.
+          else:
+              self.update_error_msg("RBX_IF: Image Source Set to: " + image_topic)
+              self.rbx_info.image_source = "None"
+              self.cv2_img = self.rbx_image_blank # Set to blank image if source topic is cleared.
+          rospy.set_param('~rbx/image_source', self.rbx_info.image_source)
         if not rospy.is_shutdown():
             #rospy.loginfo(self.rbx_info)
             self.rbx_info_pub.publish(self.rbx_info)

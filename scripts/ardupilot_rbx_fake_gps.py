@@ -41,9 +41,6 @@
 
 
 import os
-# ROS namespace setup
-NEPI_BASE_NAMESPACE = '/nepi/s2x/'
-os.environ["ROS_NAMESPACE"] = NEPI_BASE_NAMESPACE[0:-1]
 import rospy
 
 import rosnode
@@ -96,6 +93,30 @@ class ArdupilotFakeGPS(object):
   #######################
   ### Node Initialization
   def __init__(self):
+
+    # Get Mavlink NameSpace
+    try:
+      mavlink_namespace = rospy.get_param('~mavlink_namespace') # Throw exception if not present
+    except Exception as e:
+      mavlink_namespace = "mavlink"
+
+    rospy.loginfo("RBX_FAKE_GPS: Waiting for mavlink node that includes: " + mavlink_namespace)
+    mavlink_namespace = nepi_ros.wait_for_node(mavlink_namespace)
+    MAVLINK_NAMESPACE = (mavlink_namespace + '/')
+    rospy.loginfo("RBX_FAKE_GPS: Found mavlink namespace: " + MAVLINK_NAMESPACE)
+
+
+    ###################################################
+    # Init Ardupilot Fake GPS Node
+    mavlink_namespace_list = mavlink_namespace.split('/')
+    for name in mavlink_namespace_list:
+      if "mavlink" in name:
+        mav_node = name
+    node_name = mav_node.replace("mavlink","fake_gps")
+    rospy.init_node
+    rospy.init_node(name = node_name)
+    rospy.loginfo("RBX_FAKE_GPS: Launching node named: " + node_name)
+
     self.fake_gps_enabled = False
 
     rospy.loginfo("RBX_FAKE_GPS: Starting Initialization Processes")
@@ -121,18 +142,11 @@ class ArdupilotFakeGPS(object):
     self.current_home_wgs84_geo.altitude = self.current_location_wgs84_geo.altitude
 
     rospy.loginfo("RBX_FAKE_GPS: Start Home GEO Location: " + str(self.current_home_wgs84_geo))
-    ## Define Class Namespaces
-    self.nepi_nav_SERVICE_NAME = self.NEPI_BASE_NAMESPACE + "nav_pose_query"
 
+    self.nepi_nav_service_name = nepi_ros.get_base_namespace() + "nav_pose_query"
 
-    # Find Mavlink NameSpace
-    mavlink_namespace = rospy.get_name().replace("fake_gps","mavlink")
-    rospy.loginfo("RBX_ARDU: Waiting for node that includes string: " + mavlink_namespace)
-    mavlink_namespace = nepi_ros.wait_for_node(mavlink_namespace)
-    self.mavlink_namespace = (mavlink_namespace + '/')
-    rospy.loginfo("RBX_ARDU: Found mavlink namespace: " + self.mavlink_namespace)
     # MAVLINK Fake GPS Publish Topic
-    MAVLINK_HILGPS_TOPIC = self.mavlink_namespace + "hil/gps"
+    MAVLINK_HILGPS_TOPIC = MAVLINK_NAMESPACE + "hil/gps"
     rospy.loginfo("RBX_FAKE_GPS: Will publish fake gps on mavlink topic: " + MAVLINK_HILGPS_TOPIC)
     self.mavlink_pub = rospy.Publisher(MAVLINK_HILGPS_TOPIC, HilGPS, queue_size=1)
 
@@ -142,14 +156,14 @@ class ArdupilotFakeGPS(object):
       rospy.loginfo("RBX_FAKE_GPS: Waiting for current heading from navpose service call")
       nepi_ros.sleep(1,10)
       #Home fake gps publish and print callbacks
-      rospy.loginfo("RBX_FAKE_GPS: Homeing fake gps publishing to " + MAVLINK_HILGPS_TOPIC)
+      rospy.loginfo("RBX_FAKE_GPS: Fake gps publishing to " + MAVLINK_HILGPS_TOPIC)
       rospy.Timer(rospy.Duration(self.gps_publish_interval_sec), self.fake_gps_pub_callback)
 
    # Setup RBX driver interfaces
     robot_namespace = rospy.get_name().replace("fake_gps","ardupilot")
-    rospy.loginfo("RBX_ARDU: Waiting for node that includes string: " + robot_namespace)
+    rospy.loginfo("RBX_ARDU: Waiting for RBX node that includes string: " + robot_namespace)
     robot_namespace = nepi_ros.wait_for_node(robot_namespace)
-    robot_namespace = robot_namespace + "/"
+    robot_namespace = robot_namespace + "rbx"
     rbx_namespace = (robot_namespace + 'rbx/')
     rospy.loginfo("RBX_ARDU: Found rbx namespace: " + rbx_namespace)
 
@@ -164,7 +178,6 @@ class ArdupilotFakeGPS(object):
     self.force_settings_pub = rospy.Publisher(robot_namespace + "publish_settings",Empty, queue_size=1)
     time.sleep(1)
     self.force_settings_pub.publish(Empty())
-  
 
         
     # Create Fake GPS controls subscribers
@@ -181,6 +194,11 @@ class ArdupilotFakeGPS(object):
 
     ## Initiation Complete
     rospy.loginfo("RBX_FAKE_GPS: Initialization Complete")
+
+    #Set up node shutdown
+    rospy.on_shutdown(self.cleanup_actions)
+    # Spin forever (until object is detected)
+    rospy.spin()
 
   #######################
   ### Node Methods
@@ -281,7 +299,7 @@ class ArdupilotFakeGPS(object):
   def update_current_heading_callback(self,timer):
     # Get current NEPI NavPose data from NEPI ROS nav_pose_query service call
     try:
-      get_navpose_service = rospy.ServiceProxy(self.nepi_nav_SERVICE_NAME, NavPoseQuery)
+      get_navpose_service = rospy.ServiceProxy(self.nepi_nav_service_name, NavPoseQuery)
       nav_pose_response = get_navpose_service(NavPoseQueryRequest())
       self.current_heading_deg = nav_pose_response.nav_pose.heading.heading
       #rospy.loginfo('')
@@ -491,24 +509,5 @@ class ArdupilotFakeGPS(object):
 # Main
 #########################################
 if __name__ == '__main__':
-  search_name = "mavlink"
-  replace_name = "fake_gps"
-
-  rospy.loginfo("Waiting for namespace: " + search_name)
-  mavlink_namespace = nepi_ros.wait_for_node(search_name)
-  rospy.loginfo("Found namespace: " + mavlink_namespace)
-  mavlink_namespace_list = mavlink_namespace.split('/')
-  node_name = None
-  for name in mavlink_namespace_list:
-    if "mavlink" in name:
-      node_name = name.replace(search_name,replace_name)
-  if node_name is not None:
-    rospy.init_node
-    rospy.init_node(name = node_name)
-    rospy.loginfo("Launching node named: " + node_name)
-    node = ArdupilotFakeGPS()  
-    #Set up node shutdown
-    rospy.on_shutdown(node.cleanup_actions)
-    # Spin forever (until object is detected)
-    rospy.spin()
+  ArdupilotFakeGPS()
   

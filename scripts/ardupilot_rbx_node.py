@@ -14,9 +14,6 @@
 ### Set the namespace before importing rospy
 
 import os
-# ROS namespace setup
-NEPI_BASE_NAMESPACE = '/nepi/s2x/'
-os.environ["ROS_NAMESPACE"] = NEPI_BASE_NAMESPACE[0:-1]
 import rospy
 
 import time
@@ -30,7 +27,7 @@ import cv2
 from nepi_edge_sdk_base import nepi_ros 
 from nepi_edge_sdk_base import nepi_nav
 
-from rbx_robot_if import ROSRBXRobotIF
+from nepi_edge_sdk_rbx.rbx_robot_if import ROSRBXRobotIF
 
 from std_msgs.msg import Empty, Int8, UInt8, UInt32, Bool, String, Float32, Float64
 from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3, PoseStamped
@@ -139,41 +136,47 @@ class ArdupilotRBX():
   ### Node Initialization
   def __init__(self):
 
+    ###################################################
+    # Get Mavlink NameSpace
+    try:
+      mavlink_namespace = rospy.get_param('~mavlink_namespace') # Throw exception if not present
+    except Exception as e:
+      mavlink_namespace = "mavlink"
+
+    rospy.loginfo("RBX_ARDU: Waiting for mavlink node that includes: " + mavlink_namespace)
+    mavlink_namespace = nepi_ros.wait_for_node(mavlink_namespace)
+    MAVLINK_NAMESPACE = (mavlink_namespace + '/')
+    rospy.loginfo("RBX_ARDU: Found mavlink namespace: " + MAVLINK_NAMESPACE)
+
+
+    ###################################################
+    # Init Ardupilot Node
+    mavlink_namespace_list = mavlink_namespace.split('/')
+    for name in mavlink_namespace_list:
+      if "mavlink" in name:
+        mav_node = name
+    self.node_name = mav_node.replace("mavlink","ardupilot")
+    rospy.init_node
+    rospy.init_node(name = self.node_name)
+    rospy.loginfo("RBX_ARDU: Launching node named: " + self.node_name)
 
     rospy.loginfo("RBX_ARDU: Starting Initialization Processes")
     self.status_msg_pub = rospy.Publisher("~status_msg", String, queue_size=1)
- 
- 
 
-    ###################################################
-    # MAVLINK Namespace
-    # Find Mavlink NameSpace
-    mavlink_namespace = rospy.get_name().replace("ardupilot","mavlink")
-    self.publishMsg("RBX_ARDU: Waiting for node that includes string: " + mavlink_namespace)
-    mavlink_namespace = nepi_ros.wait_for_node(mavlink_namespace)
-    MAVLINK_NAMESPACE = (mavlink_namespace + '/')
-    self.publishMsg("RBX_ARDU: Found mavlink namespace: " + MAVLINK_NAMESPACE)
+    ## Define RBX NavPose Publishers
+    NEPI_BASE_NAMESPACE = nepi_ros.get_base_namespace()
+    NEPI_RBX_NAMESPACE = NEPI_BASE_NAMESPACE + self.node_name + "/rbx/"
+    NEPI_RBX_NAVPOSE_GPS_TOPIC = NEPI_RBX_NAMESPACE + "gps_fix"
+    NEPI_RBX_NAVPOSE_ODOM_TOPIC = NEPI_RBX_NAMESPACE + "odom"
+    NEPI_RBX_NAVPOSE_HEADING_TOPIC = NEPI_RBX_NAMESPACE + "heading"
+
+    self.rbx_navpose_gps_pub = rospy.Publisher("~gps_fix", NavSatFix, queue_size=1)
+    self.rbx_navpose_odom_pub = rospy.Publisher("~odom", Odometry, queue_size=1)
+    self.rbx_navpose_heading_pub = rospy.Publisher("~heading", Float64, queue_size=1)
+
+
     # MAVLINK Subscriber Topics
     MAVLINK_STATE_TOPIC = MAVLINK_NAMESPACE + "state"
-    MAVLINK_BATTERY_TOPIC = MAVLINK_NAMESPACE + "battery"
-    # MAVLINK Required Services
-    MAVLINK_SET_HOME_SERVICE = MAVLINK_NAMESPACE + "cmd/set_home"
-    MAVLINK_SET_MODE_SERVICE = MAVLINK_NAMESPACE + "set_mode"
-    MAVLINK_ARMING_SERVICE = MAVLINK_NAMESPACE + "cmd/arming"
-    MAVLINK_TAKEOFF_SERVICE = MAVLINK_NAMESPACE + "cmd/takeoff"
-    # MAVLINK NavPose Source Topics
-    MAVLINK_SOURCE_GPS_TOPIC = MAVLINK_NAMESPACE + "global_position/global"
-    MAVLINK_SOURCE_ODOM_TOPIC = MAVLINK_NAMESPACE + "global_position/local"
-    MAVLINK_SOURCE_HEADING_TOPIC = MAVLINK_NAMESPACE + "global_position/compass_hdg"
-    # MAVLINK Setpoint Control Topics
-    MAVLINK_SETPOINT_ATTITUDE_TOPIC = MAVLINK_NAMESPACE + "setpoint_raw/attitude"
-    MAVLINK_SETPOINT_POSITION_LOCAL_TOPIC = MAVLINK_NAMESPACE + "setpoint_position/local"
-    MAVLINK_SETPOINT_LOCATION_GLOBAL_TOPIC = MAVLINK_NAMESPACE + "setpoint_position/global"
-
-
-
-    ## Start Class Publishers and Subscribers
-    # Start a node status msg publisher
     # Wait for MAVLink State topic to publish then subscribe
     self.publishMsg("Waiting for topic: " + MAVLINK_STATE_TOPIC)
     nepi_ros.wait_for_topic(MAVLINK_STATE_TOPIC)
@@ -188,36 +191,24 @@ class ArdupilotRBX():
     self.publishMsg("Starting State: " + self.state_current)
     self.publishMsg("Starting Mode: " + self.mode_current)
 
-    """     
-    # Launch the NEPI ROS RBX node
-    node_name = self.DEFAULT_NODE_NAME
-    if port_id is not None:
-      node_name = node_name + '_' + port_id
-    self.publishMsg("")
-    self.publishMsg("********************")
-    self.publishMsg("Starting " + node_name)
-    self.publishMsg("********************")
-    self.publishMsg("")
-    rospy.init_node(node_name) # Node name could be overridden via remapping
-    """
-
-
     self.node_name = rospy.get_name().split('/')[-1]
     self.publishMsg(self.node_name + ": ... Connected!")
 
 
-    ## Define RBX NavPose Publishers
-    NEPI_BASE_NAMESPACE = nepi_ros.get_base_namespace()
-    NEPI_RBX_NAMESPACE = NEPI_BASE_NAMESPACE + self.node_name + "/rbx/"
-    NEPI_RBX_NAVPOSE_GPS_TOPIC = NEPI_RBX_NAMESPACE + "gps_fix"
-    NEPI_RBX_NAVPOSE_ODOM_TOPIC = NEPI_RBX_NAMESPACE + "odom"
-    NEPI_RBX_NAVPOSE_HEADING_TOPIC = NEPI_RBX_NAMESPACE + "heading"
-
-    self.rbx_navpose_gps_pub = rospy.Publisher(NEPI_RBX_NAVPOSE_GPS_TOPIC, NavSatFix, queue_size=1)
-    self.rbx_navpose_odom_pub = rospy.Publisher(NEPI_RBX_NAVPOSE_ODOM_TOPIC, Odometry, queue_size=1)
-    self.rbx_navpose_heading_pub = rospy.Publisher(NEPI_RBX_NAVPOSE_HEADING_TOPIC, Float64, queue_size=1)
-
-
+    MAVLINK_BATTERY_TOPIC = MAVLINK_NAMESPACE + "battery"
+    # MAVLINK Required Services
+    MAVLINK_SET_HOME_SERVICE = MAVLINK_NAMESPACE + "cmd/set_home"
+    MAVLINK_SET_MODE_SERVICE = MAVLINK_NAMESPACE + "set_mode"
+    MAVLINK_ARMING_SERVICE = MAVLINK_NAMESPACE + "cmd/arming"
+    MAVLINK_TAKEOFF_SERVICE = MAVLINK_NAMESPACE + "cmd/takeoff"
+    # MAVLINK NavPose Source Topics
+    MAVLINK_SOURCE_GPS_TOPIC = MAVLINK_NAMESPACE + "global_position/global"
+    MAVLINK_SOURCE_ODOM_TOPIC = MAVLINK_NAMESPACE + "global_position/local"
+    MAVLINK_SOURCE_HEADING_TOPIC = MAVLINK_NAMESPACE + "global_position/compass_hdg"
+    # MAVLINK Setpoint Control Topics
+    MAVLINK_SETPOINT_ATTITUDE_TOPIC = MAVLINK_NAMESPACE + "setpoint_raw/attitude"
+    MAVLINK_SETPOINT_POSITION_LOCAL_TOPIC = MAVLINK_NAMESPACE + "setpoint_position/local"
+    MAVLINK_SETPOINT_LOCATION_GLOBAL_TOPIC = MAVLINK_NAMESPACE + "setpoint_position/global"
     ## Define Mavlink Services Calls
     self.set_home_client = rospy.ServiceProxy(MAVLINK_SET_HOME_SERVICE, CommandHome)
     self.mode_client = rospy.ServiceProxy(MAVLINK_SET_MODE_SERVICE, SetMode)
@@ -236,6 +227,8 @@ class ArdupilotRBX():
     self.setpoint_attitude_pub = rospy.Publisher(MAVLINK_SETPOINT_ATTITUDE_TOPIC, AttitudeTarget, queue_size=1)
     self.setpoint_position_local_pub = rospy.Publisher(MAVLINK_SETPOINT_POSITION_LOCAL_TOPIC, PoseStamped, queue_size=1)
 
+
+    
 
     # Initialize settings
     self.cap_settings = self.getCapSettings()
@@ -300,15 +293,17 @@ class ArdupilotRBX():
     #updated the system config from the parameters that have been established
     self.rbx_if.updateFromParamServer()
     time.sleep(1)
-  
+
     ## Initiation Complete
-    self.publishMsg("RBX Node Initialization Complete")
-    #rospy.spin()
+    self.publishMsg("Initialization Complete")
+    #Set up node shutdown
+    rospy.on_shutdown(self.cleanup_actions)
+    # Spin forever (until object is detected)
+    rospy.spin()
 
 
   def publishMsg(self,msgStr):
-
-    rospy.loginfo(msgStr)
+    rospy.loginfo("RBX_ARDU: " + str(msgStr))
     self.status_msg_pub.publish(str(msgStr))
 
   #**********************
@@ -724,26 +719,7 @@ class ArdupilotRBX():
 # Main
 #########################################
 if __name__ == '__main__':
-  search_name = "mavlink"
-  replace_name = "ardupilot"
-
-  rospy.loginfo("Waiting for namespace: " + search_name)
-  mavlink_namespace = nepi_ros.wait_for_node(search_name)
-  rospy.loginfo("Found namespace: " + mavlink_namespace)
-  mavlink_namespace_list = mavlink_namespace.split('/')
-  node_name = None
-  for name in mavlink_namespace_list:
-    if "mavlink" in name:
-      node_name = name.replace(search_name,replace_name)
-  if node_name is not None:
-    rospy.init_node
-    rospy.init_node(name = node_name)
-    rospy.loginfo("Launching node named: " + node_name)
-    node = ArdupilotRBX()  
-    #Set up node shutdown
-    rospy.on_shutdown(node.cleanup_actions)
-    # Spin forever (until object is detected)
-    rospy.spin()
+  ArdupilotRBX()
 
 
 

@@ -10,14 +10,19 @@
 
 # NEPI RBS Auto Discovery Script for Mavlink devices
 
+import sys
+import time
 import rospy
 import serial
 import serial.tools.list_ports
 import subprocess
 
+from nepi_edge_sdk_base import nepi_ros
+
 from mavros_msgs.srv import VehicleInfoGet
 from mavros_msgs.msg import VehicleInfo
-#from nepi_edge_sdk_rbx import ardupilot_rbx_node
+
+sys.path.append("/opt/nepi/ros/lib/nepi_edge_sdk_rbx")
 
 #Define Discovery Search Parameters
 BAUDRATE_LIST = [57600] # Just one supported baud rate at present
@@ -26,11 +31,13 @@ BAUDRATE_LIST = [57600] # Just one supported baud rate at present
 # TODO: These should all be replaced with a single list of data structs (e.g., dictionaries)
 mavlink_node_list = []
 mavlink_subproc_list = []
-#mavlink_ardu_node_list = []
-#mavlink_ardu_subproc_list = []
 mavlink_port_list = []
 mavlink_sysid_list = []
 mavlink_compid_list = []
+ardu_node_name_list = []
+ardu_subproc_list = []
+fgps_node_name_list = []
+fgps_subproc_list = []
 
 #########################################
 # Mavlink Discover Method
@@ -40,12 +47,15 @@ mavlink_compid_list = []
 def mavlink_discover(active_port_list):
   global mavlink_node_list
   global mavlink_subproc_list
-#  global mavlink_ardu_node_list  
-#  global mavlink_ardu_subproc_list
   global mavlink_port_list
   global mavlink_sysid_list
   global mavlink_compid_list
   global mavlink_info_list
+  global ardu_node_name_list
+  global ardu_subproc_list
+  global fgps_node_name_list
+  global fgps_subproc_list
+
 
   node_name = rospy.get_name().split('/')[-1] + '/mavlink_auto_discovery'
   base_namespace = rospy.get_namespace()
@@ -67,7 +77,7 @@ def mavlink_discover(active_port_list):
           rospy.logdebug(node_name + ": Opening serial port " + port_str + " with baudrate: " + str(baud_int))
           serial_port = serial.Serial(port_str,baud_int,timeout = 1)
         except Exception as e:
-          rospy.logwarn(node_name + ": Unable to open serial port " + port_str + " with baudrate: " + str(baud_int) + "(" + str(e) + ")")
+          rospy.logwarn("FAKE_GPS: " + node_name + ": Unable to open serial port " + port_str + " with baudrate: " + str(baud_int) + "(" + str(e) + ")")
           continue
         
         for i in range(0,64): # Read up to 64 packets waiting for heartbeat
@@ -76,7 +86,7 @@ def mavlink_discover(active_port_list):
             bytes_read = serial_port.read_until(b'\xFD', 280) # MAVLINK_2 packet start magic number, up to MAVLINK_2 max bytes in packet
             bytes_read_count = len(bytes_read)
           except Exception as e:
-            rospy.logwarn("%s: read_until() failed (%s)", node_name, str(e))
+            rospy.logwarn("FAKE_GPS: " + "%s: read_until() failed (%s)", node_name, str(e))
             continue
 
           if bytes_read_count == 0 or bytes_read_count == 255: # Timed out or read the max mavlink bytes in a packet
@@ -116,12 +126,10 @@ def mavlink_discover(active_port_list):
         # If this is a mavlink, load params and launch the mavros node
         if found_heartbeat:
           addr_str = str(sys_id)
-          rospy.loginfo(node_name + ": Found mavlink device at: " + addr_str)
+          rospy.loginfo("Mavlink_AD: " +node_name + ": Found mavlink device at: " + addr_str)
           port_str_short = port_str.split('/')[-1]
           mavlink_node_name = "mavlink_" + port_str_short + "_" + addr_str
           mavlink_node_namespace = base_namespace + mavlink_node_name
- #         mavlink_ardu_node_name = "ardupilot_" + port_str_short + "_" + addr_str
- #         mavlink_ardu_node_namespace = base_namespace + mavlink_node_name
           
           # Load the proper configs for APM
           rosparam_load_cmd = ['rosparam', 'load', '/opt/ros/noetic/share/mavros/launch/apm_pluginlists.yaml', mavlink_node_namespace]
@@ -141,10 +149,27 @@ def mavlink_discover(active_port_list):
         
           fcu_url = port_str + ':' + str(baud_int)
           node_run_cmd = ['rosrun', 'mavros', 'mavros_node', '__name:=' + mavlink_node_name, '_fcu_url:=' + fcu_url] 
-          mp = subprocess.Popen(node_run_cmd)
-          
-#          node_ardu_run_cmd = ['rosrun', 'nepi_edge_sdk_rbx', 'ardupilot_rbx_node', '__name:=' + mavlink_ardu_node_name, '_mavlink_node_name:=' + mavlink_node_name]
-#          mpa = subprocess.Popen(node_ardu_run_cmd)
+          mav_subproc = subprocess.Popen(node_run_cmd)
+
+          time.sleep(2)
+
+          base_namespace = nepi_ros.get_base_namespace()
+          # Start the ardupilot RBX interface for this mavlink connection)
+          ardu_node_name = "ardupilot_" + port_str_short + "_" + addr_str
+          rospy.loginfo("Mavlink_AD: " + "Starting ardupilot rbx node: " + ardu_node_name)
+          processor_run_cmd = ["rosrun", "nepi_edge_sdk_rbx", "ardupilot_rbx_node.py",
+                                "__name:=" + ardu_node_name, f"__ns:={base_namespace}", f"_mavlink_namespace:={mavlink_node_name}"]
+          ardu_subproc = subprocess.Popen(processor_run_cmd)
+
+
+          # Start the ardupilot RBX interface for this mavlink connection)
+          fgps_node_name = "fake_gps_" + port_str_short + "_" + addr_str
+          rospy.loginfo("Mavlink_AD: " + "Starting fake gps rbx node: " + fgps_node_name)
+          processor_run_cmd = ["rosrun", "nepi_edge_sdk_rbx", "ardupilot_rbx_fake_gps.py",
+                                "__name:=" + fgps_node_name, f"__ns:={base_namespace}", f"_mavlink_namespace:={mavlink_node_name}"]
+          fgps_subproc = subprocess.Popen(processor_run_cmd)
+
+
           # And make sure it actually starts up fully by waiting for a guaranteed service
           vehicle_info_service_name = mavlink_node_namespace + '/vehicle_info_get'
           try:
@@ -154,11 +179,14 @@ def mavlink_discover(active_port_list):
             active_port_list.append(port_str)
             mavlink_port_list.append(port_str)
             mavlink_node_list.append(mavlink_node_name)
-            mavlink_subproc_list.append(mp)
+            mavlink_subproc_list.append(mav_subproc)
             mavlink_sysid_list.append(sys_id)
             mavlink_compid_list.append(comp_id)
- #           mavlink_ardu_node_list.append(mavlink_ardu_node_name)
- #           mavlink_ardu_subproc_list.append(mpa)
+            ardu_node_name_list.append(ardu_node_name)
+            ardu_subproc_list.append(ardu_subproc)
+            fgps_node_name_list.append(fgps_node_name)
+            fgps_subproc_list.append(fgps_subproc)
+
             break # Don't check any more baud rates since this one was already successful
           except:
             rospy.logerr("%s: Failed to start %s", node_name, mavlink_node_name)
@@ -168,22 +196,25 @@ def mavlink_discover(active_port_list):
     purge_node = False
     
     subproc = mavlink_subproc_list[i]
-#    ardu_node = mavlink_ardu_node_name[i]
-#    ardu_subproc = mavlink_ardu_subproc_list[i]
     port = mavlink_port_list[i]
     sysid = mavlink_sysid_list[i]
     compid = mavlink_compid_list[i]
     full_node_name = base_namespace + '/' + node
+    ardu_node_name = ardu_node_name_list[i]
+    ardu_subproc = ardu_subproc_list[i]
+    fgps_node_name = fgps_node_name_list[i]
+    fgps_subproc = fgps_subproc_list[i]
+
 #    full_ardu_node_name = base_namespace + '/' + ardu_node
     
     # Check that the node process is still running
     if subproc.poll() is not None:
-      rospy.logwarn('%s: Node process for %s is no longer running... purging from managed list', node_name, node)
-#      rospy.logwarn('%s: Node process for %s is no longer running... purging from managed list', node_name, ardu_node)
+      rospy.logwarn("FAKE_GPS: " + '%s: Node process for %s is no longer running... purging from managed list', node_name, node)
+#      rospy.logwarn("FAKE_GPS: " + '%s: Node process for %s is no longer running... purging from managed list', node_name, ardu_node)
       purge_node = True
     # Check that the node's port still exists
     elif port not in active_port_list:
-      rospy.logwarn('%s: Port %s associated with node %s no longer detected', node_name, port, node)
+      rospy.logwarn("FAKE_GPS: " + '%s: Port %s associated with node %s no longer detected', node_name, port, node)
       purge_node = True
     else:
       # Now check that the node is actually responsive
@@ -197,18 +228,18 @@ def mavlink_discover(active_port_list):
         vehicle_info_query(sysid=sysid, compid=compid, get_all=False)
  
       except Exception as e: # Any exception indicates that the service call failed
-        rospy.logwarn('%s: Node %s is no longer responding to vehicle info queries (%s)', node_name, node, str(e))
+        rospy.logwarn("FAKE_GPS: " + '%s: Node %s is no longer responding to vehicle info queries (%s)', node_name, node, str(e))
         purge_node = True
 
     if purge_node:
-      rospy.logwarn('%s: Purging node %s', node_name, node)
+      rospy.logwarn("FAKE_GPS: " + '%s: Purging node %s', node_name, node)
 
       if port in active_port_list:
-        rospy.logwarn('%s: Removing port %s from active list as part of node purging', node_name, port)
+        rospy.logwarn("FAKE_GPS: " + '%s: Removing port %s from active list as part of node purging', node_name, port)
         active_port_list.remove(port)
 
       if subproc.poll() is None:
-        rospy.logwarn('%s: Issuing sigterm to process for %s as part of node purging', node_name, node)
+        rospy.logwarn("FAKE_GPS: " + '%s: Issuing sigterm to process for %s as part of node purging', node_name, node)
         subproc.kill()
         # Turns out that is not always enough to get the node out of the ros system, so we use rosnode cleanup, too
         # rosnode cleanup won't find the disconnected node until the process is fully terminated
@@ -217,31 +248,44 @@ def mavlink_discover(active_port_list):
         except:
           pass
 
-#        if ardu_subproc.poll() is None:
-#          rospy.logwarn('%s: Issuing sigterm to process for %s as part of node purging', node_name, ardu_node)
- #         ardu_subproc.kill()
- #         # Turns out that is not always enough to get the node out of the ros system, so we use rosnode cleanup, too
-#          # rosnode cleanup won't find the disconnected node until the process is fully terminated
- #         try:
-#            subproc.wait(timeout=10)
- #         except:
- #           pass
+      if ardu_subproc.poll() is None:
+        rospy.logwarn("FAKE_GPS: " + '%s: Issuing sigterm to process for %s as part of node purging', node_name, ardu_node_name)
+        ardu_subproc.kill()
+        # Turns out that is not always enough to get the node out of the ros system, so we use rosnode cleanup, too
+        # rosnode cleanup won't find the disconnected node until the process is fully terminated
+        try:
+          ardu_subproc.wait(timeout=10)
+        except:
+          pass
+
+      if fgps_subproc.poll() is None:
+        rospy.logwarn("FAKE_GPS: " + '%s: Issuing sigterm to process for %s as part of node purging', node_name, fgps_node_name)
+        fgps_subproc.kill()
+        # Turns out that is not always enough to get the node out of the ros system, so we use rosnode cleanup, too
+        # rosnode cleanup won't find the disconnected node until the process is fully terminated
+        try:
+          fgps_subproc.wait(timeout=10)
+        except:
+          pass
+
         
         cleanup_proc = subprocess.Popen(['rosnode', 'cleanup'], stdin=subprocess.PIPE)
         try:
           cleanup_proc.communicate(input=bytes("y\r\n", 'utf-8'), timeout=10)
           cleanup_proc.wait(timeout=10) 
         except Exception as e:
-          rospy.logwarn('%s: rosnode cleanup failed (%s)', node_name, str(e))
+          rospy.logwarn("FAKE_GPS: " + '%s: rosnode cleanup failed (%s)', node_name, str(e))
             
       # Clean up the globals  
       del mavlink_port_list[i]
       del mavlink_node_list[i]     
       del mavlink_subproc_list[i]
-#      del mavlink_ardu_node_list[i]
-#      del mavlink_ardu_subproc_list[i]
       del mavlink_sysid_list[i]
       del mavlink_compid_list[i]
+      del ardu_node_name_list[i]
+      del ardu_subproc_list[i]
+      del fgps_node_name_list[i]
+      del fgps_subproc_list[i]
   
   return active_port_list
 
