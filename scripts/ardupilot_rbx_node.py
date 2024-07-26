@@ -69,14 +69,10 @@ class ArdupilotRBX():
   DEFAULT_NODE_NAME = "ardupilot" # connection port added once discovered
 
   CAP_SETTINGS = [["Float","takeoff_height_m","0.0","10000.0"],
-                  ["Float","takeoff_min_pitch_deg","-90.0","90.0"],
-                  ["Float","takeoff_error_bound_m","0","100"],
-                  ["Float","takeoff_timeout_s","0","10000"]]
+                  ["Float","takeoff_min_pitch_deg","-90.0","90.0"]]
 
   FACTORY_SETTINGS_OVERRIDES = dict( takeoff_height_m = "5",
-                                      takeoff_min_pitch_deg = "10",
-                                      takeoff_error_bound_m = "2",
-                                      takeoff_timeout_s = "20" )
+                                      takeoff_min_pitch_deg = "10")
 
   
   # RBX State and Mode Dictionaries
@@ -165,15 +161,15 @@ class ArdupilotRBX():
 
     ## Define RBX NavPose Publishers
     NEPI_BASE_NAMESPACE = nepi_ros.get_base_namespace()
-    NEPI_RBX_NAMESPACE = NEPI_BASE_NAMESPACE + self.node_name + "/rbx/"
+    NEPI_RBX_NAMESPACE = NEPI_BASE_NAMESPACE + self.node_name + "/"
     NEPI_RBX_NAVPOSE_GPS_TOPIC = NEPI_RBX_NAMESPACE + "gps_fix"
     NEPI_RBX_NAVPOSE_ODOM_TOPIC = NEPI_RBX_NAMESPACE + "odom"
     NEPI_RBX_NAVPOSE_HEADING_TOPIC = NEPI_RBX_NAMESPACE + "heading"
 
-    self.rbx_navpose_gps_pub = rospy.Publisher("~gps_fix", NavSatFix, queue_size=1)
-    self.rbx_navpose_odom_pub = rospy.Publisher("~odom", Odometry, queue_size=1)
-    self.rbx_navpose_heading_pub = rospy.Publisher("~heading", Float64, queue_size=1)
-
+    self.rbx_navpose_gps_pub = rospy.Publisher(NEPI_RBX_NAVPOSE_GPS_TOPIC, NavSatFix, queue_size=1)
+    self.rbx_navpose_odom_pub = rospy.Publisher(NEPI_RBX_NAVPOSE_ODOM_TOPIC, Odometry, queue_size=1)
+    self.rbx_navpose_heading_pub = rospy.Publisher(NEPI_RBX_NAVPOSE_HEADING_TOPIC, Float64, queue_size=1)
+    time.sleep(1) # Important
 
     # MAVLINK Subscriber Topics
     MAVLINK_STATE_TOPIC = MAVLINK_NAMESPACE + "state"
@@ -191,25 +187,15 @@ class ArdupilotRBX():
     self.publishMsg("Starting State: " + self.state_current)
     self.publishMsg("Starting Mode: " + self.mode_current)
 
-    self.node_name = rospy.get_name().split('/')[-1]
-    self.publishMsg(self.node_name + ": ... Connected!")
 
-
-    MAVLINK_BATTERY_TOPIC = MAVLINK_NAMESPACE + "battery"
     # MAVLINK Required Services
+    self.publishMsg("Configuring interfaces for mavlink namespace: " + MAVLINK_NAMESPACE)
+    ## Define Mavlink Services Calls
     MAVLINK_SET_HOME_SERVICE = MAVLINK_NAMESPACE + "cmd/set_home"
     MAVLINK_SET_MODE_SERVICE = MAVLINK_NAMESPACE + "set_mode"
     MAVLINK_ARMING_SERVICE = MAVLINK_NAMESPACE + "cmd/arming"
     MAVLINK_TAKEOFF_SERVICE = MAVLINK_NAMESPACE + "cmd/takeoff"
-    # MAVLINK NavPose Source Topics
-    MAVLINK_SOURCE_GPS_TOPIC = MAVLINK_NAMESPACE + "global_position/global"
-    MAVLINK_SOURCE_ODOM_TOPIC = MAVLINK_NAMESPACE + "global_position/local"
-    MAVLINK_SOURCE_HEADING_TOPIC = MAVLINK_NAMESPACE + "global_position/compass_hdg"
-    # MAVLINK Setpoint Control Topics
-    MAVLINK_SETPOINT_ATTITUDE_TOPIC = MAVLINK_NAMESPACE + "setpoint_raw/attitude"
-    MAVLINK_SETPOINT_POSITION_LOCAL_TOPIC = MAVLINK_NAMESPACE + "setpoint_position/local"
-    MAVLINK_SETPOINT_LOCATION_GLOBAL_TOPIC = MAVLINK_NAMESPACE + "setpoint_position/global"
-    ## Define Mavlink Services Calls
+
     self.set_home_client = rospy.ServiceProxy(MAVLINK_SET_HOME_SERVICE, CommandHome)
     self.mode_client = rospy.ServiceProxy(MAVLINK_SET_MODE_SERVICE, SetMode)
     self.arming_client = rospy.ServiceProxy(MAVLINK_ARMING_SERVICE, CommandBool)
@@ -217,17 +203,31 @@ class ArdupilotRBX():
 
 
     # Subscribe to MAVLink topics
+    MAVLINK_BATTERY_TOPIC = MAVLINK_NAMESPACE + "battery"
+
     rospy.Subscriber(MAVLINK_BATTERY_TOPIC, BatteryState, self.get_mavlink_battery_callback)
+
+    MAVLINK_SOURCE_GPS_TOPIC = MAVLINK_NAMESPACE + "global_position/global"
+    MAVLINK_SOURCE_ODOM_TOPIC = MAVLINK_NAMESPACE + "global_position/local"
+    MAVLINK_SOURCE_HEADING_TOPIC = MAVLINK_NAMESPACE + "global_position/compass_hdg"
+
     rospy.Subscriber(MAVLINK_SOURCE_GPS_TOPIC, NavSatFix, self.gps_topic_callback)
     rospy.Subscriber(MAVLINK_SOURCE_ODOM_TOPIC, Odometry, self.odom_topic_callback)
     rospy.Subscriber(MAVLINK_SOURCE_HEADING_TOPIC, Float64, self.heading_topic_callback)
-    
+
     ## Define Mavlink Publishers
+    MAVLINK_SETPOINT_ATTITUDE_TOPIC = MAVLINK_NAMESPACE + "setpoint_raw/attitude"
+    MAVLINK_SETPOINT_POSITION_LOCAL_TOPIC = MAVLINK_NAMESPACE + "setpoint_position/local"
+    MAVLINK_SETPOINT_LOCATION_GLOBAL_TOPIC = MAVLINK_NAMESPACE + "setpoint_position/global"
+
     self.setpoint_location_global_pub = rospy.Publisher(MAVLINK_SETPOINT_LOCATION_GLOBAL_TOPIC, GeoPoseStamped, queue_size=1)
     self.setpoint_attitude_pub = rospy.Publisher(MAVLINK_SETPOINT_ATTITUDE_TOPIC, AttitudeTarget, queue_size=1)
     self.setpoint_position_local_pub = rospy.Publisher(MAVLINK_SETPOINT_POSITION_LOCAL_TOPIC, PoseStamped, queue_size=1)
 
+    time.sleep(1)
 
+    self.node_name = rospy.get_name().split('/')[-1]
+    self.publishMsg(self.node_name + ": ... Connected!")
     
 
     # Initialize settings
@@ -343,7 +343,7 @@ class ArdupilotRBX():
       [s_name, s_type, data] = nepi_ros.get_data_from_setting(setting)
       #self.publishMsg(type(data))
       if data is not None:
-        if setting_name in settings_dict.keys():
+        if setting_name in self.settings_dict.keys():
           self.settings_dict[setting_name] = setting[2]
           success = True
         else:
@@ -504,6 +504,8 @@ class ArdupilotRBX():
         geoid_height_m = self.rbx_if.current_geoid_height_m
       altitude_wgs84 = navsatfix_msg.altitude - geoid_height_m
       navsatfix_msg.altitude = altitude_wgs84 
+      #navfixStr=str(navsatfix_msg)
+      #rospy.loginfo("ARDU_RBX: " + navfixStr)
       if not rospy.is_shutdown():
         self.rbx_navpose_gps_pub.publish(navsatfix_msg)
       
@@ -552,13 +554,21 @@ class ArdupilotRBX():
     self.publishMsg(arm_value)
     time.sleep(1) # Give time for other process to see busy
     self.publishMsg("Waiting for armed value to set to " + str(arm_value))
-    while self.mavlink_state.armed != arm_value and not rospy.is_shutdown():
-      time.sleep(.25)
+    timeout_sec = self.rbx_if.rbx_info.cmd_timeout
+    check_interval_s = 0.25
+    check_timer = 0
+    while self.mavlink_state.armed != arm_value and check_timer < timeout_sec and not rospy.is_shutdown():
       self.arming_client.call(arm_cmd)
+      time.sleep(check_interval_s)
+      check_timer += check_interval_s
       #self.publishMsg("Waiting for armed value to set")
       #self.publishMsg("Set Value: " + str(arm_value))
       #self.publishMsg("Cur Value: " + str(self.mavlink_state.armed))
-    self.publishMsg("Armed value set to " + str(arm_value))
+    if self.mavlink_state.armed == arm_value:
+      self.publishMsg("Armed value set to " + str(arm_value))
+    else:
+      self.publishMsg("Setting Armed value timed-out")
+  
 
   ### Function to set mavlink mode
   def set_mavlink_mode(self,mode_new):
@@ -568,13 +578,20 @@ class ArdupilotRBX():
     self.publishMsg(mode_new)
     time.sleep(1) # Give time for other process to see busy
     self.publishMsg("Waiting for mode to set to " + mode_new)
-    while self.mavlink_state.mode != mode_new and not rospy.is_shutdown():
-      time.sleep(.25)
+    timeout_sec = self.rbx_if.rbx_info.cmd_timeout
+    check_interval_s = 0.25
+    check_timer = 0
+    while self.mavlink_state.mode != mode_new and check_timer < timeout_sec and not rospy.is_shutdown():
       self.mode_client.call(new_mode)
+      time.sleep(check_interval_s)
+      check_timer += check_interval_s
       #self.publishMsg("Waiting for mode to set")
       #self.publishMsg("Set Value: " + mode_new)
       #self.publishMsg("Cur Value: " + str(self.mavlink_state.mode))
-    self.publishMsg("Mode set to " + mode_new)
+    if self.mavlink_state.mode == mode_new:
+      self.publishMsg("Mode set to " + mode_new)
+    else:
+      self.publishMsg("Setting mode value timed-out")
 
 
 
@@ -622,27 +639,29 @@ class ArdupilotRBX():
     cmd_success = False
     takeoff_height_m = float(self.settings_dict['takeoff_height_m'])
     takeoff_min_pitch_deg = float(self.settings_dict['takeoff_min_pitch_deg'])
-    takeoff_error_bound = float(self.settings_dict['takeoff_error_bound_m'])
-    takeoff_timeout_s = float(self.settings_dict['takeoff_timeout_s'])
+    self.publishMsg("Sending Takeoff Command to altitude to " + str(takeoff_height_m) + " meters")
+    self.takeoff_client(min_pitch=takeoff_min_pitch_deg,altitude=takeoff_height_m)
     start_alt = self.rbx_if.current_location_wgs84_geo[2]
     goal_alt = start_alt + takeoff_height_m
-    check_interval_s = float(takeoff_timeout_s) / 100
-    self.publishMsg("Sending Takeoff Command to altitude to " + str(takeoff_height_m) + " meters")
-    time.sleep(1) # VERY IMPORTANT - Sleep a bit between declaring a publisher and using it
-    self.takeoff_client(min_pitch=takeoff_min_pitch_deg,altitude=takeoff_height_m)
+    error_bound_m = self.rbx_if.rbx_info.error_bounds.max_distance_error_m
+    timeout_sec = self.rbx_if.rbx_info.cmd_timeout
+    check_interval_s = float(timeout_sec) / 100
     check_timer = 0
-    check_error = abs(goal_alt - self.rbx_if.current_location_wgs84_geo[2])
-    while (check_error > takeoff_error_bound and check_timer < takeoff_timeout_s):
-      check_error = abs(goal_alt - self.rbx_if.current_location_wgs84_geo[2])
+    alt_error = abs(goal_alt - self.rbx_if.current_location_wgs84_geo[2])
+    while (abs(alt_error) > error_bound_m and check_timer < timeout_sec):
+      self.rbx_if.update_current_errors( [0,0,alt_error,0,0,0,0] )
+      alt_error = (goal_alt - self.rbx_if.current_location_wgs84_geo[2])
       time.sleep(check_interval_s)
       check_timer += check_interval_s
-    if (check_timer < takeoff_timeout_s):
+    self.rbx_if.update_current_errors( [0,0,0,0,0,0,0] )
+    self.rbx_if.update_prev_errors( [0,0,alt_error,0,0,0,0] )
+    if (check_timer < timeout_sec):
       cmd_success = True
       self.takeoff_complete = True
-      self.publishMsg("Takeoff action completed with error: " + str(check_error) + " meters")
+      self.publishMsg("Takeoff action completed with error: " + str(alt_error) + " meters")
     else:
       self.takeoff_complete = False
-      self.publishMsg("Takeoff action failed to complete with error: " + str(check_error) + " meters")
+      self.publishMsg("Takeoff action timed-out with error: " + str(alt_error) + " meters")
     return cmd_success
 
   ### Function for switching to STABILIZE mode
@@ -655,20 +674,46 @@ class ArdupilotRBX():
   ### Function for switching to LAND mode
   global land
   def land(self):
+    cmd_success = False
     self.set_mavlink_mode('LAND')
     self.publishMsg("Waiting for land process to complete and disarm")
-    while self.state_current == "ARMED":
-      nepi_ros.sleep(1,10)
-    self.publishMsg("Land process complete")
-    cmd_success = True
+    timeout_sec = self.rbx_if.rbx_info.cmd_timeout
+    check_interval_s = float(timeout_sec) / 100
+    check_timer = 0
+    while (self.state_current == "ARMED" and check_timer < timeout_sec):
+      time.sleep(check_interval_s)
+      check_timer += check_interval_s
+    if self.state_current == "ARMED":
+      self.publishMsg("Land process complete")
+      cmd_success = True
+    else:
+      self.publishMsg("Land process timed-out")
     return cmd_success
 
 
   ### Function for sending go home command
   global rtl
   def rtl(self):
+    cmd_success = False
     self.set_mavlink_mode('RTL')
-    cmd_success = True
+    error_goal_m = self.rbx_if.rbx_info.error_bounds.max_distance_error_m
+    last_loc = self.rbx_if.current_location_wgs84_geo
+    timeout_sec = self.rbx_if.rbx_info.cmd_timeout
+    check_interval_s = self.rbx_if.rbx_info.error_bounds.min_stabilize_time_s
+    check_timer = 0
+    stabilized_check = False
+    while (stabilized_check and check_timer < timeout_sec):
+      nepi_ros.sleep(check_interval_s,100)
+      check_timer += check_interval_s
+      cur_loc = self.rbx_if.current_location_wgs84_geo
+      max_distance_error_m = max(abs(numpy.subtract(cur_loc,last_loc)))
+      stabilized_check = max_distance_error_m < error_goal_m
+      last_loc = cur_loc
+    if stabilized_check:
+      self.publishMsg("RTL process complete")
+      cmd_success = True
+    else:
+      self.publishMsg("RTL process timed-out")
     return cmd_success
 
 

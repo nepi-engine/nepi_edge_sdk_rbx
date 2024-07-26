@@ -161,7 +161,7 @@ class ArdupilotFakeGPS(object):
 
    # Setup RBX driver interfaces
     rospy.loginfo("RBX_FAKE_GPS: Got fake gps node name: " + node_name)
-    robot_namespace = node_name.get_name().replace("fake_gps","ardupilot")
+    robot_namespace = node_name.replace("fake_gps","ardupilot")
     rospy.loginfo("RBX_FAKE_GPS: Waiting for RBX node that includes string: " + robot_namespace)
     robot_namespace = nepi_ros.wait_for_node(robot_namespace)
     robot_namespace = robot_namespace.split("/rbx")[0] + "/"
