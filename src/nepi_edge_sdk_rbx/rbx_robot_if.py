@@ -339,7 +339,6 @@ class ROSRBXRobotIF:
 
     ### Callback to set home
     def setHomeCb(self,geo_msg):
-        rospy.loginfo("RBX_IF: *******************************")
         rospy.loginfo("RBX_IF: Received set home message")
         rospy.loginfo(geo_msg)
         new_home_location = [geo_msg.latitude,geo_msg.longitude,geo_msg.altitude]
@@ -352,7 +351,6 @@ class ROSRBXRobotIF:
 
     ### Callback to set home current
     def setHomeCurrentCb(self,empty_msg):
-        rospy.loginfo("RBX_IF: *******************************")
         rospy.loginfo("RBX_IF: Received set home current message")
         if self.setHomeFunction is not None:
             self.setHomeFunction(self.current_location_wgs84_geo)
@@ -364,7 +362,6 @@ class ROSRBXRobotIF:
 
     ### Callback to start rbx go home
     def goHomeCb(self,home_msg):
-        rospy.loginfo("RBX_IF: *******************************")
         rospy.loginfo("RBX_IF: Received go home message")
         time.sleep(1)
         if self.autonomousControlsReadyFunction() is True:
@@ -389,7 +386,6 @@ class ROSRBXRobotIF:
 
     ### Callback to start rbx stop
     def goStopCb(self,stop_msg):
-        rospy.loginfo("RBX_IF: *******************************")
         rospy.loginfo("RBX_IF: Received go stop message")
         rospy.loginfo(stop_msg)
         time.sleep(1)
@@ -414,7 +410,6 @@ class ROSRBXRobotIF:
  
   ### Callback to execute action
     def goActionCb(self,action_msg):
-        rospy.loginfo("RBX_IF: *******************************")
         rospy.loginfo("RBX_IF: Received go action message")
         rospy.loginfo(action_msg)
         action_ind = action_msg.data
@@ -431,7 +426,7 @@ class ROSRBXRobotIF:
                     self.rbx_cmd_success_current = False
                     rospy.loginfo("RBX_IF: Starting action: " + self.actions[action_ind])
                     if self.has_fake_gps:
-                        self.fake_gps_go_action_pub.publish(action_msg, )
+                        self.fake_gps_go_action_pub.publish(action_msg)
                     success = self.setActionIndFunction(action_ind)
                     self.rbx_cmd_success_current = success
                     if success:
@@ -453,9 +448,7 @@ class ROSRBXRobotIF:
 
     ### Callback to start rbx goto pose process
     def gotoPoseCb(self,pose_cmd_msg):
-        rospy.loginfo("RBX_IF: *******************************")
         rospy.loginfo("RBX_IF: Recieved GoTo Pose Message")
-        rospy.loginfo("RBX_IF: ")
         rospy.loginfo(pose_cmd_msg)
         time.sleep(1)
         if self.autonomousControlsReadyFunction() is True:
@@ -484,9 +477,7 @@ class ROSRBXRobotIF:
 
     ### Callback to start rbx goto position process
     def gotoPositionCb(self,position_cmd_msg):
-        rospy.loginfo("RBX_IF: *******************************")
         rospy.loginfo("RBX_IF: Recieved GoTo Position Command Message")
-        rospy.loginfo("RBX_IF: ")
         rospy.loginfo(position_cmd_msg)
         time.sleep(1)
         if self.rbx_status.manual_motor_control_mode_ready is False:
@@ -516,9 +507,7 @@ class ROSRBXRobotIF:
 
     ### Callback to start rbx goto location subscriber
     def gotoLocationCb(self,location_cmd_msg):
-        rospy.loginfo("RBX_IF: *******************************")
         rospy.loginfo("RBX_IF: Recieved GoTo Location Message")
-        rospy.loginfo("RBX_IF: ")
         rospy.loginfo(location_cmd_msg)
         if self.autonomousControlsReadyFunction() is True:
             setpoint_data=[location_cmd_msg.lat,location_cmd_msg.long,location_cmd_msg.altitude_meters,location_cmd_msg.yaw_deg]
@@ -549,7 +538,7 @@ class ROSRBXRobotIF:
         rospy.loginfo("RBX_IF: Received set set fake gps enable message")
         rospy.loginfo(msg)
         rospy.set_param("~fake_gps_eabled",msg.data)
-        self.fake_gps_enable_pub.publish(msg)
+        self.fake_gps_enable_pub.publish(msg.data)
 
     ### Callback to enble fake gps
     def fakeGPSResetCb(self,msg):
@@ -580,7 +569,6 @@ class ROSRBXRobotIF:
             self.current_location_wgs84_geo =  nepi_nav.get_navpose_location_wgs84_geo(nav_pose_response) 
             # Get current location vector (lat, long, alt) in geopoint data with AMSL height
             self.current_location_amsl_geo =  nepi_nav.get_navpose_location_amsl_geo(nav_pose_response)
-    ##      rospy.loginfo("RBX_IF: ")
     ##      rospy.loginfo(self.current_geoid_height_m)
     ##      rospy.loginfo(self.current_location_wgs84_geo)
     ##      rospy.loginfo(self.current_location_amsl_geo)
@@ -677,9 +665,21 @@ class ROSRBXRobotIF:
 
         self.init_fake_gps_enabled = rospy.get_param('~rbx/fake_gps_enabled', False)
         rospy.set_param('~rbx/fake_gps_enabled', self.init_fake_gps_enabled)
+        rospy.loginfo("RBX_IF: Setting up fake gps publishers with namespace: " + fake_gps_namespace)
         if fake_gps_namespace is not None:
           self.has_fake_gps = True
-          self.capabilities_report.has_fake_gps = True
+          self.capabilities_report.has_fake_gps = True        
+          rospy.Subscriber("~rbx/enable_fake_gps", Bool, self.fakeGPSEnableCb)
+          self.fake_gps_enable_pub = rospy.Publisher(fake_gps_namespace + "enable", Bool, queue_size=1)
+          rospy.Subscriber("~rbx/reset_fake_gps", Empty, self.fakeGPSResetCb)
+          self.fake_gps_reset_pub = rospy.Publisher(fake_gps_namespace + "reset", Empty, queue_size=1)
+          self.fake_gps_goto_position_pub = rospy.Publisher(fake_gps_namespace + "goto_position", RBXGotoPosition, queue_size=1)
+          self.fake_gps_goto_location_pub = rospy.Publisher(fake_gps_namespace + "goto_location", RBXGotoLocation, queue_size=1)
+          self.fake_gps_set_home_pub = rospy.Publisher(fake_gps_namespace + "set_home",GeoPoint , queue_size=1)
+          self.fake_gps_set_home_current_pub = rospy.Publisher(fake_gps_namespace + "set_home_current", Empty, queue_size=1)
+          self.fake_gps_go_home_pub = rospy.Publisher(fake_gps_namespace + "go_home", Empty, queue_size=1)
+          self.fake_gps_set_mode_pub = rospy.Publisher(fake_gps_namespace + "set_mode" , UInt8, queue_size=1)
+          self.fake_gps_go_action_pub = rospy.Publisher(fake_gps_namespace + "go_action", UInt8, queue_size=1)
         else:
           self.capabilities_report.has_fake_gps = True
 
@@ -938,27 +938,7 @@ class ROSRBXRobotIF:
         self.publishInfo()
         self.publishStatus()
         self.rbx_info.connected = True
-        self.rbx_status.ready = True
-
-        # Setup fake gps interfaces if available
-        if self.has_fake_gps:
-          rospy.loginfo("RBX_IF: Setting up Fake GPS for fake gps node: " + fake_gps_namespace)
-          rospy.loginfo("RBX_IF: Waiting for fake gps subscriber at: " + fake_gps_namespace + "enable")
-          nepi_ros.wait_for_topic(fake_gps_namespace + "enable")
-          time.sleep(1)
-          rospy.Subscriber("~rbx/enable_fake_gps", Bool, self.fakeGPSEnableCb)
-          self.fake_gps_enable_pub = rospy.Publisher(fake_gps_namespace + "enable", Bool, queue_size=1)
-          rospy.Subscriber("~rbx/reset_fake_gps", Empty, self.fakeGPSResetCb)
-          self.fake_gps_reset_pub = rospy.Publisher(fake_gps_namespace + "reset",Empty, queue_size=1)
-          rospy.loginfo("Setting up fake gps publishers on namespace: " + fake_gps_namespace)
-          self.fake_gps_goto_position_pub = rospy.Publisher(fake_gps_namespace + "goto_position", RBXGotoPosition, queue_size=1)
-          self.fake_gps_goto_location_pub = rospy.Publisher(fake_gps_namespace + "goto_location", RBXGotoLocation, queue_size=1)
-          self.fake_gps_set_home_pub = rospy.Publisher(fake_gps_namespace + "set_home",GeoPoint , queue_size=1)
-          self.fake_gps_set_home_current_pub = rospy.Publisher(fake_gps_namespace + "set_home_current", Empty, queue_size=1)
-          self.fake_gps_go_home_pub = rospy.Publisher(fake_gps_namespace + "go_home", Empty, queue_size=1)
-          self.fake_gps_set_mode_pub = rospy.Publisher(fake_gps_namespace + "set_mode" , UInt8, queue_size=1)
-          self.fake_gps_go_action_pub = rospy.Publisher(fake_gps_namespace + "go_action", UInt8, queue_size=1)
-          
+        self.rbx_status.ready = True          
 
 
 
@@ -1149,23 +1129,21 @@ class ROSRBXRobotIF:
       cmd_success = True
       timeout_sec = self.rbx_info.cmd_timeout
       self.update_current_errors( [0,0,0,0,0,0,0] )
-      rospy.loginfo("RBX_IF: Starting Setpoint Attitude Create-Send-Check Process")
+      rospy.loginfo("")
+      rospy.loginfo("RBX_IF: ************************")
+      rospy.loginfo("RBX_IF: Starting Setpoint Attitude Process")
       ##############################################
       # Capture Current NavPose Data
       ##############################################
       start_orientation_ned_degs=list(self.current_orientation_ned_degs)
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Attitude Current NED Degrees")
-      rospy.loginfo("RBX_IF:  Roll, Pitch, Yaw")
+      rospy.loginfo("RBX_IF: Attitude Current NED Roll, Pitch, Yaw in Degrees")
       rospy.loginfo(["%.2f" % start_orientation_ned_degs[0],"%.2f" % start_orientation_ned_degs[1],"%.2f" % start_orientation_ned_degs[2]])
       ##############################################
       # Condition Inputs
       ##############################################
       input_attitude_ned_degs = list(setpoint_attitude)
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Attitude Input NED Degrees")
-      rospy.loginfo("RBX_IF:  Roll, Pitch, Yaw")
-      rospy.loginfo(["%.2f" % input_attitude_ned_degs[0],"%.2f" % input_attitude_ned_degs[1],"%.2f" % input_attitude_ned_degs[2]])
+      #rospy.loginfo("RBX_IF: Attitude Input NED Roll, Pitch, Yaw in Degrees")
+      #rospy.loginfo(["%.2f" % input_attitude_ned_degs[0],"%.2f" % input_attitude_ned_degs[1],"%.2f" % input_attitude_ned_degs[2]])
       # Set new attitude in degs NED
       new_attitude_ned_degs=list(start_orientation_ned_degs) # Initialize with start values
       for ind in range(3): # Overwrite current with new if set and valid
@@ -1174,30 +1152,24 @@ class ROSRBXRobotIF:
         # Condition to +-180 deg
         if new_attitude_ned_degs[ind] > 180:
           new_attitude_ned_degs[ind] = new_attitude_ned_degs[ind] - 360
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Attitude Input Conditioned NED Degrees")
-      rospy.loginfo("RBX_IF:  Roll, Pitch, Yaw")
-      rospy.loginfo(["%.2f" % new_attitude_ned_degs[0],"%.2f" % new_attitude_ned_degs[1],"%.2f" % new_attitude_ned_degs[2]])
+      #rospy.loginfo("RBX_IF: Attitude Input Conditioned NED Roll, Pitch, Yaw in Degrees")
+      #rospy.loginfo(["%.2f" % new_attitude_ned_degs[0],"%.2f" % new_attitude_ned_degs[1],"%.2f" % new_attitude_ned_degs[2]])
       ##############################################
       # Convert NED attitude to Pose
       ##############################################
       # Convert to ROS ENU attitude degs and create ENU quaternion setpoint attitude goal
       yaw_enu_deg = nepi_nav.convert_yaw_ned2enu(new_attitude_ned_degs[2])
       new_attitude_enu_degs = [new_attitude_ned_degs[0],new_attitude_ned_degs[1],yaw_enu_deg]
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Attitude Goal ENU Degrees")
-      rospy.loginfo("RBX_IF:  Roll, Pitch, Yaw")
+      rospy.loginfo("RBX_IF: Attitude Goal ENU Roll, Pitch, Yaw in Degrees")
       rospy.loginfo(["%.2f" % new_attitude_enu_degs[0],"%.2f" % new_attitude_enu_degs[1],"%.2f" % new_attitude_enu_degs[2]])
       ##############################################
       ## Send Setpoint Message and Check for Success
       ##############################################
-      rospy.loginfo('')
       rospy.loginfo("RBX_IF: Sending Setpoint Attitude Command at 50 Hz and")
       rospy.loginfo("RBX_IF: Waiting for Attitude Setpoint to complete")
       setpoint_attitude_reached = False
       stabilize_timer=0
       timeout_timer = 0 # Initialize timeout timer
-      print_timer = 0
       attitude_errors = [] # Initialize running list of errors
       while setpoint_attitude_reached is False and not rospy.is_shutdown():  # Wait for setpoint goal to be set
         if timeout_timer > timeout_sec:
@@ -1221,26 +1193,7 @@ class ROSRBXRobotIF:
           if stabilize_timer > self.rbx_info.error_bounds.min_stabilize_time_s:
             max_attitude_errors = max(attitude_errors) # Get max from error window
             attitude_errors = [max_attutude_error_deg] # reset running list of errors
-          print_timer = print_timer + time2sleep
-          if print_timer > 1:
-            print_timer = 0
-            rospy.loginfo("RBX_IF: ")
-            rospy.loginfo("RBX_IF: Goto Pose Updates")
-            # rospy.loginfo some information
-            rospy.loginfo('')
-            rospy.loginfo("RBX_IF: Current Attitude NED Degrees")
-            rospy.loginfo("RBX_IF:  Roll, Pitch, Yaw")
-            rospy.loginfo(["%.2f" % self.current_orientation_ned_degs[0],"%.2f" % self.current_orientation_ned_degs[1],"%.2f" % self.current_orientation_ned_degs[2]])
-            rospy.loginfo('')
-            rospy.loginfo("RBX_IF: Current Goal NED Degrees")
-            rospy.loginfo(["%.2f" % new_attitude_ned_degs[0],"%.2f" % new_attitude_ned_degs[1],"%.2f" % new_attitude_ned_degs[2]])
-            rospy.loginfo('')
-            rospy.loginfo("RBX_IF: Current Attitude Errors")
-            rospy.loginfo(["%.3f" % attitude_errors_degs[0],"%.3f" % attitude_errors_degs[1],"%.3f" % attitude_errors_degs[2]])
-            rospy.loginfo("RBX_IF: Max Error from Stabilized Check Window Meters")
-            rospy.loginfo(["%.2f" % max_attitude_errors])
             if max_attitude_errors < self.rbx_info.error_bounds.max_rotation_error_deg:
-              rospy.loginfo('')
               rospy.loginfo("RBX_IF: Attitude Setpoint Reached")
               setpoint_attitude_reached = True
           else:
@@ -1276,79 +1229,65 @@ class ROSRBXRobotIF:
       timeout_sec = self.rbx_info.cmd_timeout
       self.update_current_errors( [0,0,0,0,0,0,0] )
       rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Starting Setpoint Position Local Create-Send-Check Process")
+      rospy.loginfo("RBX_IF: ************************")
+      rospy.loginfo("RBX_IF: Starting Setpoint Position Local Process")
       ##############################################
       # Capture Current NavPose Data
       ##############################################
       start_geopoint_wgs84 = list(self.current_location_wgs84_geo)
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Start Location WSG84 geopoint")
-      rospy.loginfo("RBX_IF:  Lat, Long, Alt")
-      rospy.loginfo(["%.2f" % start_geopoint_wgs84[0],"%.2f" % start_geopoint_wgs84[1],"%.2f" % start_geopoint_wgs84[2]])
+      #rospy.loginfo("RBX_IF: Start Location WSG84 geopoint")
+      #rospy.loginfo("RBX_IF:  Lat, Long, Alt")
+      #rospy.loginfo(["%.2f" % start_geopoint_wgs84[0],"%.2f" % start_geopoint_wgs84[1],"%.2f" % start_geopoint_wgs84[2]])
       start_position_ned_m = list(self.current_position_ned_m)
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Start Position NED degs")
-      rospy.loginfo("RBX_IF:  X, Y, Z")
-      rospy.loginfo(["%.2f" % start_position_ned_m[0],"%.2f" % start_position_ned_m[1],"%.2f" % start_position_ned_m[2]])   
+      #rospy.loginfo("RBX_IF: Start Position NED degs")
+      #rospy.loginfo("RBX_IF:  X, Y, Z")
+      #rospy.loginfo(["%.2f" % start_position_ned_m[0],"%.2f" % start_position_ned_m[1],"%.2f" % start_position_ned_m[2]])   
       start_orientation_ned_degs=list(self.current_orientation_ned_degs)
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Start Orientation NED degs")
-      rospy.loginfo("RBX_IF:  Roll, Pitch, Yaw")
-      rospy.loginfo(["%.2f" % start_orientation_ned_degs[0],"%.2f" % start_orientation_ned_degs[1],"%.2f" % start_orientation_ned_degs[2]])
-      rospy.loginfo('')
+      #rospy.loginfo("RBX_IF: Start Orientation NED degs")
+      #rospy.loginfo("RBX_IF:  Roll, Pitch, Yaw")
+      #rospy.loginfo(["%.2f" % start_orientation_ned_degs[0],"%.2f" % start_orientation_ned_degs[1],"%.2f" % start_orientation_ned_degs[2]])
       start_yaw_ned_deg = start_orientation_ned_degs[2]
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Start Yaw NED degs")
-      rospy.loginfo(start_yaw_ned_deg) 
+      #rospy.loginfo("RBX_IF: Start Yaw NED degs")
+      #rospy.loginfo(start_yaw_ned_deg) 
       start_heading_deg=self.current_heading_deg
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Start Heading degs")
-      rospy.loginfo(start_heading_deg)   
+      #rospy.loginfo("RBX_IF: Start Heading degs")
+      #rospy.loginfo(start_heading_deg)   
       ##############################################
       # Condition Body Input Data
       ##############################################
       # Condition Point Input
       input_point_body_m=setpoint_position[0:3]
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Point Input Body Meters")
-      rospy.loginfo("RBX_IF:  X, Y, Z")
+      rospy.loginfo("RBX_IF: Input Postion Body  X, Y, Z in Meters")
       rospy.loginfo(["%.2f" % input_point_body_m[0],"%.2f" % input_point_body_m[1],"%.2f" % input_point_body_m[2]])
       new_point_body_m=list(input_point_body_m) # No conditioning required
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Point Conditioned Body Meters")
-      rospy.loginfo("RBX_IF:  X, Y, Z")
-      rospy.loginfo(["%.2f" % new_point_body_m[0],"%.2f" % new_point_body_m[1],"%.2f" % new_point_body_m[2]])
+      #rospy.loginfo("RBX_IF: Point Conditioned Body Meters")
+      #rospy.loginfo("RBX_IF:  X, Y, Z")
+      #rospy.loginfo(["%.2f" % new_point_body_m[0],"%.2f" % new_point_body_m[1],"%.2f" % new_point_body_m[2]])
       # Condition Orienation Input
       input_yaw_body_deg = setpoint_position[3]
-      rospy.loginfo('')
       rospy.loginfo("RBX_IF: Yaw Input Body Degrees")
       rospy.loginfo(["%.2f" % input_yaw_body_deg])
       new_yaw_body_deg = input_yaw_body_deg
       # Condition to +-180 deg
       if new_yaw_body_deg > 180:
         new_yaw_body_deg = new_yaw_body_deg - 360
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Yaw Input Conditioned Body Degrees")
-      rospy.loginfo(["%.2f" % new_yaw_body_deg])      
+      #rospy.loginfo("RBX_IF: Yaw Input Conditioned Body Degrees")
+      #rospy.loginfo(["%.2f" % new_yaw_body_deg])      
       ##############################################
       # Convert Body Data to NED Data
       ##############################################
       # Set new yaw orientation in NED degrees
       offset_ned_m = nepi_nav.convert_point_body2ned(new_point_body_m,start_yaw_ned_deg)
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Point Goal Offsets NED Meters")
-      rospy.loginfo("RBX_IF:  X, Y, Z")
-      rospy.loginfo(["%.2f" % offset_ned_m[0],"%.2f" % offset_ned_m[1],"%.2f" % offset_ned_m[2]])
+      #rospy.loginfo("RBX_IF: Point Goal Offsets NED Meters")
+      #rospy.loginfo("RBX_IF:  X, Y, Z")
+      #rospy.loginfo(["%.2f" % offset_ned_m[0],"%.2f" % offset_ned_m[1],"%.2f" % offset_ned_m[2]])
       new_x_ned_m = start_position_ned_m[0] + offset_ned_m[0]
       new_y_ned_m = start_position_ned_m[1] + offset_ned_m[1]
       new_z_ned_m = start_position_ned_m[2] + offset_ned_m[2]
       new_point_ned_m = [new_x_ned_m,new_y_ned_m,new_z_ned_m]
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Point Goal NED Meters")
-      rospy.loginfo("RBX_IF:  X, Y, Z")
+      rospy.loginfo("RBX_IF: Point Goal NED X, Y, Z in Meters")
       rospy.loginfo(["%.2f" % new_point_ned_m[0],"%.2f" % new_point_ned_m[1],"%.2f" % new_point_ned_m[2]])
       new_yaw_ned_deg = nepi_nav.convert_yaw_body2ned(new_yaw_body_deg,start_yaw_ned_deg)
-      rospy.loginfo('')
       rospy.loginfo("RBX_IF: Yaw Goal NED Degrees")
       rospy.loginfo(["%.2f" % new_yaw_ned_deg])
       ##############################################
@@ -1359,37 +1298,16 @@ class ROSRBXRobotIF:
       new_point_enu_m.x = new_point_ned_m[1]
       new_point_enu_m.y = new_point_ned_m[0]
       new_point_enu_m.z = - new_point_ned_m[2]
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Point Goal ENU Meters")
-      rospy.loginfo("RBX_IF:  X, Y, Z")
+      rospy.loginfo("RBX_IF: Position Goal ENU X, Y, Z in Meters")
       rospy.loginfo(["%.2f" % new_point_enu_m.x,"%.2f" % new_point_enu_m.y,"%.2f" % new_point_enu_m.z])
+
       new_yaw_enu_deg = nepi_nav.convert_yaw_ned2enu(new_yaw_ned_deg)
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Yaw Goal ENU Degrees")
-      rospy.loginfo(["%.2f" % new_yaw_enu_deg])
-      ##############################################
-      # Create Local ENU Position and Orienation Setpoint Values
-      ##############################################
-      # New Local Position ENU in meters
-      new_point_enu_m=Point()
-      new_point_enu_m.x = new_point_enu_m.x
-      new_point_enu_m.y = new_point_enu_m.y
-      new_point_enu_m.z = new_point_enu_m.z
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Position Goal ENU Meters")
-      rospy.loginfo("RBX_IF:  X, Y, Z")
-      rospy.loginfo(["%.2f" % new_point_enu_m.x,"%.2f" % new_point_enu_m.y,"%.2f" % new_point_enu_m.z])
-      # New Local Orienation ENU in meters  
       new_orientation_enu_deg = [start_orientation_ned_degs[0],start_orientation_ned_degs[1],new_yaw_enu_deg]
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Orienation Goal ENU Degrees")
-      rospy.loginfo("RBX_IF:  Roll, Pitch, Yaw")
+      rospy.loginfo("RBX_IF: Orienation Goal ENU  Roll, Pitch, Yaw in Degrees")
       rospy.loginfo(["%.2f" % new_orientation_enu_deg[0],"%.2f" % new_orientation_enu_deg[1],"%.2f" % new_orientation_enu_deg[2]])
       ##############################################
       ## Send Message and Check for Setpoint Success
       ##############################################
-
-      rospy.loginfo('')
       rospy.loginfo("RBX_IF: Sending Setpoint Position Local Command at 50 Hz and")
       rospy.loginfo("RBX_IF: Waiting for Attitude Setpoint to complete")
       setpoint_position_local_point_reached = False
@@ -1398,8 +1316,6 @@ class ROSRBXRobotIF:
       point_errors = [] # Initialize running list of errors
       yaw_errors = [] # Initialize running list of errors
       timeout_timer = 0 # Initialize timeout timer
-      print_timer_1 = 0
-      print_timer_2 = 0
       while setpoint_position_local_point_reached is False or setpoint_position_local_yaw_reached is False and not rospy.is_shutdown():  # Wait for setpoint goal to be set
         if timeout_timer > timeout_sec:
           self.update_error_msg("Setpoint cmd timed out")
@@ -1429,25 +1345,7 @@ class ROSRBXRobotIF:
           if stabilize_timer > self.rbx_info.error_bounds.min_stabilize_time_s:
             max_point_errors = max(point_errors) # Get max from error window
             point_errors = [max_point_ned_error_m] # reset running list of errors
-          print_timer_1 = print_timer_1 + time2sleep
-          if print_timer_1 > 1:
-            print_timer_1 = 0
-            rospy.loginfo("RBX_IF: Goto Position Position Updates")
-            # rospy.loginfo some information every second
-            rospy.loginfo('')
-            rospy.loginfo("RBX_IF: Current Position NED Meters")
-            rospy.loginfo("RBX_IF:  X, Y, Z")
-            rospy.loginfo(["%.2f" % self.current_position_ned_m[0],"%.2f" % self.current_position_ned_m[1],"%.2f" % self.current_position_ned_m[2]])
-            rospy.loginfo("RBX_IF: Current Goal NED Meters")
-            rospy.loginfo("RBX_IF:  X, Y, Z")
-            rospy.loginfo(["%.2f" % new_point_ned_m[0],"%.2f" % new_point_ned_m[1],"%.2f" % new_point_ned_m[2]])
-            rospy.loginfo("RBX_IF: Current Errors Meters")
-            rospy.loginfo("RBX_IF:  X, Y, Z")
-            rospy.loginfo(["%.2f" % point_ned_error_m[0],"%.2f" % point_ned_error_m[1],"%.2f" % point_ned_error_m[2]])
-            rospy.loginfo("RBX_IF: Max Error from Stabilized Check Window Meters")
-            rospy.loginfo(["%.2f" % max_point_errors])
             if max_point_errors < self.rbx_info.error_bounds.max_distance_error_m:
-              rospy.loginfo('')
               rospy.loginfo("RBX_IF: Position Setpoint Reached")
               setpoint_position_local_point_reached = True
           else:
@@ -1457,23 +1355,7 @@ class ROSRBXRobotIF:
           if stabilize_timer > self.rbx_info.error_bounds.min_stabilize_time_s:
             max_yaw_errors = max(yaw_errors) # Get max from error window
             yaw_errors = [max_yaw_ned_error_deg] # reset running list of errors
-          print_timer_2 = print_timer_2 + time2sleep
-          if print_timer_2 > 1:
-            print_timer_2 = 0
-            rospy.loginfo("RBX_IF: ")
-            rospy.loginfo("RBX_IF: Goto Position Yaw Updates")
-            # rospy.loginfo some information every second
-            rospy.loginfo('')
-            rospy.loginfo("RBX_IF: Current Yaw NED Degrees")
-            rospy.loginfo(self.current_orientation_ned_degs[2])
-            rospy.loginfo("RBX_IF: Current Goal NED Degrees")
-            rospy.loginfo(new_yaw_ned_deg)
-            rospy.loginfo("RBX_IF: Current Error Degree")
-            rospy.loginfo(max_yaw_ned_error_deg)
-            rospy.loginfo("RBX_IF: Max Error from Stabilized Check Window Meters")
-            rospy.loginfo(["%.2f" % max_yaw_errors])
             if max_yaw_errors < self.rbx_info.error_bounds.max_rotation_error_deg:
-              rospy.loginfo('')
               rospy.loginfo("RBX_IF: Yaw Setpoint Reached")
               setpoint_position_local_yaw_reached = True
           else:
@@ -1483,8 +1365,8 @@ class ROSRBXRobotIF:
           stabilize_timer=0 # Reset rospy.loginfo timer
         self.update_current_errors(  [point_ned_error_m[0],point_ned_error_m[1],point_ned_error_m[2],0,0,0,max_yaw_ned_error_deg] )
       if cmd_success:
-        rospy.loginfo("RBX_IF: ************************")
         rospy.loginfo("RBX_IF: Setpoint Reached")
+        rospy.loginfo("RBX_IF: ************************")
       self.update_current_errors( [0,0,0,0,0,0,0] )
       self.update_prev_errors(  [point_ned_error_m[0],point_ned_error_m[1],point_ned_error_m[2],0,0,0,max_yaw_ned_error_deg] )
       return cmd_success
@@ -1505,29 +1387,25 @@ class ROSRBXRobotIF:
       timeout_sec = self.rbx_info.cmd_timeout
       self.update_current_errors( [0,0,0,0,0,0,0] )
       rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Starting Setpoint Location Global Create-Send-Check Process")
+      rospy.loginfo("RBX_IF: ************************")
+      rospy.loginfo("RBX_IF: Starting Setpoint Location Global Process")
       ##############################################
       # Capture Current NavPose Data
       ##############################################
       start_geopoint_wgs84 = list(self.current_location_wgs84_geo)  
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Start Location WSG84 geopoint")
-      rospy.loginfo("RBX_IF:  Lat, Long, Alt")
-      rospy.loginfo(["%.6f" % start_geopoint_wgs84[0],"%.6f" % start_geopoint_wgs84[1],"%.2f" % start_geopoint_wgs84[2]])
+      #rospy.loginfo("RBX_IF: Start Location WSG84 geopoint")
+      #rospy.loginfo("RBX_IF:  Lat, Long, Alt")
+      #rospy.loginfo(["%.6f" % start_geopoint_wgs84[0],"%.6f" % start_geopoint_wgs84[1],"%.2f" % start_geopoint_wgs84[2]])
       start_orientation_ned_degs=list(self.current_orientation_ned_degs)
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Start Orientation NED degs")
-      rospy.loginfo("RBX_IF:  Roll, Pitch, Yaw")
-      rospy.loginfo(["%.6f" % start_orientation_ned_degs[0],"%.6f" % start_orientation_ned_degs[1],"%.2f" % start_orientation_ned_degs[2]])
-      rospy.loginfo('')
+      #rospy.loginfo("RBX_IF: Start Orientation NED degs")
+      #rospy.loginfo("RBX_IF:  Roll, Pitch, Yaw")
+      #rospy.loginfo(["%.6f" % start_orientation_ned_degs[0],"%.6f" % start_orientation_ned_degs[1],"%.2f" % start_orientation_ned_degs[2]])
       start_yaw_ned_deg = start_orientation_ned_degs[2]
       if start_yaw_ned_deg < 0:
         start_yaw_ned_deg = start_yaw_ned_deg + 360
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Start Yaw NED degs 0-360")
+      #rospy.loginfo("RBX_IF: Start Yaw NED degs 0-360")
       rospy.loginfo(start_yaw_ned_deg) 
       start_heading_deg=self.current_heading_deg
-      rospy.loginfo('')
       rospy.loginfo("RBX_IF: Start Heading degs")
       rospy.loginfo(start_heading_deg)
       start_geoid_height_m = self.current_geoid_height_m
@@ -1536,32 +1414,28 @@ class ROSRBXRobotIF:
       ##############################################
       # Condition Location Input
       input_geopoint_wgs84 = list(setpoint_location[0:3])
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Location Input Global Geo")
-      rospy.loginfo("RBX_IF:  Lat, Long, Alt_WGS84")
-      rospy.loginfo(["%.8f" % input_geopoint_wgs84[0],"%.8f" % input_geopoint_wgs84[1],"%.2f" % input_geopoint_wgs84[2]])
+      #rospy.loginfo("RBX_IF: Location Input Global Geo")
+      #rospy.loginfo("RBX_IF:  Lat, Long, Alt_WGS84")
+      #rospy.loginfo(["%.8f" % input_geopoint_wgs84[0],"%.8f" % input_geopoint_wgs84[1],"%.2f" % input_geopoint_wgs84[2]])
       new_geopoint_wgs84=list(start_geopoint_wgs84) # Initialize with start
       for ind in range(3): # Overwrite current with new if set and valid
         if input_geopoint_wgs84[ind] != -999:
           new_geopoint_wgs84[ind]=input_geopoint_wgs84[ind]
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Location Input Conditioned Global Geo")
-      rospy.loginfo("RBX_IF:  Lat, Long, Alt_WGS84")
-      rospy.loginfo(["%.8f" % new_geopoint_wgs84[0],"%.8f" % new_geopoint_wgs84[1],"%.2f" % new_geopoint_wgs84[2]])
+      #rospy.loginfo("RBX_IF: Location Input Conditioned Global Geo")
+      #rospy.loginfo("RBX_IF:  Lat, Long, Alt_WGS84")
+      #rospy.loginfo(["%.8f" % new_geopoint_wgs84[0],"%.8f" % new_geopoint_wgs84[1],"%.2f" % new_geopoint_wgs84[2]])
       # Condition Yaw Input
       input_yaw_ned_deg = setpoint_location[3]
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Yaw Input NED Degrees")
-      rospy.loginfo(["%.2f" % input_yaw_ned_deg])
+      #rospy.loginfo("RBX_IF: Yaw Input NED Degrees")
+      #rospy.loginfo(["%.2f" % input_yaw_ned_deg])
       new_yaw_ned_deg = start_yaw_ned_deg # Initialize to current
       if input_yaw_ned_deg != -999: # Replace if not -999
         new_yaw_ned_deg = input_yaw_ned_deg
       # Condition to 0-360 degs
       if new_yaw_ned_deg < 0:
         new_yaw_ned_deg = new_yaw_ned_deg + 360
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Yaw Input Conditioned NED Degrees 0-360")
-      rospy.loginfo(["%.2f" % new_yaw_ned_deg])      
+      #rospy.loginfo("RBX_IF: Yaw Input Conditioned NED Degrees 0-360")
+      #rospy.loginfo(["%.2f" % new_yaw_ned_deg])      
       ##############################################
       # Create Global AMSL Location and NED Orienation Setpoint Values
       ##############################################
@@ -1570,15 +1444,11 @@ class ROSRBXRobotIF:
       new_geopoint_amsl.latitude = new_geopoint_wgs84[0]
       new_geopoint_amsl.longitude = new_geopoint_wgs84[1]
       new_geopoint_amsl.altitude = new_geopoint_wgs84[2] + start_geoid_height_m
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Location Goal AMSL Meters")
-      rospy.loginfo("RBX_IF:  Lat, Long, Alt_AMSL")
+      rospy.loginfo("RBX_IF: Location Goal Lat, Long, Alt_AMSL")
       rospy.loginfo(["%.8f" % new_geopoint_amsl.latitude,"%.8f" % new_geopoint_amsl.longitude,"%.2f" % new_geopoint_amsl.altitude])
       # New Local Orienation NED in degs  
       new_orientation_ned_deg = [start_orientation_ned_degs[0],start_orientation_ned_degs[1],new_yaw_ned_deg]
-      rospy.loginfo('')
-      rospy.loginfo("RBX_IF: Orienation Goal NED Degrees")
-      rospy.loginfo("RBX_IF:  Roll, Pitch, Yaw")
+      rospy.loginfo("RBX_IF: Orienation Goal NED  Roll, Pitch, Yaw in Degrees")
       rospy.loginfo(["%.2f" % new_orientation_ned_deg[0],"%.2f" % new_orientation_ned_deg[1],"%.2f" % new_orientation_ned_deg[2]])
       ##############################################
       ## Send Message and Check for Setpoint Success
@@ -1588,14 +1458,11 @@ class ROSRBXRobotIF:
       rospy.loginfo("RBX_IF:  checking for Setpoint Reached")
       setpoint_location_global_geopoint_reached = False
       setpoint_location_global_yaw_reached = False 
-      rospy.loginfo('')
       rospy.loginfo("RBX_IF: Waiting for Position Local Setpoint to complete")
       stabilize_timer=0
       geopoint_errors = [] # Initialize running list of errors
       yaw_errors = [] # Initialize running list of errors
       timeout_timer = 0 # Initialize timeout timer
-      print_timer_1 = 0
-      print_timer_2 = 0
       while setpoint_location_global_geopoint_reached is False or setpoint_location_global_yaw_reached is False and not rospy.is_shutdown(): # Wait for setpoint goal to be set
         if timeout_timer > timeout_sec:
           self.update_error_msg("Setpoint cmd timed out")
@@ -1628,27 +1495,7 @@ class ROSRBXRobotIF:
           if stabilize_timer > self.rbx_info.error_bounds.min_stabilize_time_s:
             max_geopoint_errors = max(geopoint_errors) # Get max from error window
             geopoint_errors = [max_geopoint_error_m] # reset running list of errors
-          print_timer_1 = print_timer_1 + time2sleep
-          if print_timer_1 > 1:
-            print_timer_1 = 0
-            rospy.loginfo("RBX_IF: ")
-            rospy.loginfo("RBX_IF: Goto Location Location Updates")
-            #rospy.loginfo(self.rbx_status.errors_current)
-            # rospy.loginfo some information every second
-            rospy.loginfo('')
-            rospy.loginfo("RBX_IF: Current Location WGS84")
-            rospy.loginfo("RBX_IF:  Lat, Long, Alt_WGS84")
-            rospy.loginfo(["%.7f" % self.current_location_wgs84_geo[0],"%.7f" % self.current_location_wgs84_geo[1],"%.2f" % self.current_location_wgs84_geo[2]])
-            rospy.loginfo("RBX_IF: Current Goal WGS84")
-            rospy.loginfo("RBX_IF:  Lat, Long, Alt_WGS84")
-            rospy.loginfo(["%.7f" % new_geopoint_wgs84[0],"%.7f" % new_geopoint_wgs84[1],"%.2f" % new_geopoint_wgs84[2]])
-            rospy.loginfo("RBX_IF: Current Errors Meters")
-            rospy.loginfo("RBX_IF:  Lat, Long, Alt")
-            rospy.loginfo(["%.2f" % geopoint_errors_m[0],"%.2f" % geopoint_errors_m[1],"%.2f" % geopoint_errors_m[2]])
-            rospy.loginfo("RBX_IF: Max Error from Stabilized Check Window Meters")
-            rospy.loginfo(["%.2f" % max_geopoint_errors])
             if max_geopoint_errors < self.rbx_info.error_bounds.max_distance_error_m:
-              rospy.loginfo('')
               rospy.loginfo("RBX_IF: Location Setpoint Reached")
               setpoint_location_global_geopoint_reached = True
           else:
@@ -1658,23 +1505,7 @@ class ROSRBXRobotIF:
           if stabilize_timer > self.rbx_info.error_bounds.min_stabilize_time_s:
             max_yaw_errors = max(yaw_errors) # Get max from error window
             yaw_errors = [max_yaw_ned_error_deg] # reset running list of errors
-          print_timer_2 = print_timer_2 + time2sleep
-          if print_timer_2 > 1:
-            print_timer_2 = 0
-            rospy.loginfo("RBX_IF: ")
-            rospy.loginfo("RBX_IF: Goto Location Yaw Updates")
-            # rospy.loginfo some information every second
-            rospy.loginfo('')
-            rospy.loginfo("RBX_IF: Current Yaw NED Degrees")
-            rospy.loginfo(cur_yaw_ned_deg)
-            rospy.loginfo("RBX_IF: Current Goal NED Degrees")
-            rospy.loginfo(new_yaw_ned_deg)
-            rospy.loginfo("RBX_IF: Current Error Degree")
-            rospy.loginfo(max_yaw_ned_error_deg)
-            rospy.loginfo("RBX_IF: Max Error from Stabilized Check Window Degs")
-            rospy.loginfo(["%.2f" % max_yaw_errors])
             if max_yaw_errors < self.rbx_info.error_bounds.max_rotation_error_deg:
-              rospy.loginfo('')
               rospy.loginfo("RBX_IF: Yaw Setpoint Reached")
               setpoint_location_global_yaw_reached = True
           else:
@@ -1684,8 +1515,8 @@ class ROSRBXRobotIF:
           stabilize_timer=0 # Reset rospy.loginfo timer
         self.update_current_errors( [geopoint_errors_m[0],geopoint_errors_m[1],geopoint_errors_m[2],0,0,0,max_yaw_ned_error_deg] )
       if cmd_success:
-        rospy.loginfo("RBX_IF: ************************")
         rospy.loginfo("RBX_IF: Setpoint Reached")
+        rospy.loginfo("RBX_IF: ************************")
       self.update_current_errors( [0,0,0,0,0,0,0] )
       self.update_prev_errors( [geopoint_errors_m[0],geopoint_errors_m[1],geopoint_errors_m[2],0,0,0,max_yaw_ned_error_deg] )
       return cmd_success

@@ -23,6 +23,7 @@ import tf
 import random
 import sys
 import cv2
+import copy
 
 from nepi_edge_sdk_base import nepi_ros 
 from nepi_edge_sdk_base import nepi_nav
@@ -97,7 +98,7 @@ class ArdupilotRBX():
                           hw_version = "",
                           sw_version = "")
                         
-  settings_dict = FACTORY_SETTINGS_OVERRIDES 
+  settings_dict = copy.deepcopy(FACTORY_SETTINGS_OVERRIDES)
 
   axis_controls = AxisControls()
   axis_controls.x = True

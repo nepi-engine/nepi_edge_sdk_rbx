@@ -232,12 +232,12 @@ class ArdupilotFakeGPS(object):
 
   ### function to simulate move to new global geo position
   def move(self,geopoint_msg):
+    rospy.loginfo("")
     rospy.loginfo('***********************')
-    rospy.loginfo("RBX_FAKE_GPS: Fake GPS Moving FROM, TO, DELTA")
-
-    rospy.loginfo(self.current_location_wgs84_geo)
-    rospy.loginfo('')
-    rospy.loginfo(geopoint_msg)
+    loc = self.current_location_wgs84_geo
+    rospy.loginfo("RBX_FAKE_GPS: Fake GPS Moving FROM: " + str(loc.latitude) + ", " + str(loc.longitude) + ", " + str(loc.altitude)) 
+    loc = geopoint_msg
+    rospy.loginfo("RBX_FAKE_GPS: T0: " + str(loc.latitude) + ", " + str(loc.longitude) + ", " + str(loc.altitude)) 
     org_geo=np.array([self.current_location_wgs84_geo.latitude, \
                       self.current_location_wgs84_geo.longitude, self.current_location_wgs84_geo.altitude])
     cur_geo = org_geo
@@ -246,8 +246,8 @@ class ArdupilotFakeGPS(object):
       if new_geo[ind] == -999.0: # Use current
         new_geo[ind]=org_geo[ind]
     delta_geo = new_geo - org_geo
-    rospy.loginfo('')
-    rospy.loginfo(delta_geo)
+    #rospy.loginfo("RBX_FAKE_GPS: TO:")
+    #rospy.loginfo(delta_geo)
     
     move_dist_m = nepi_nav.distance_geopoints(org_geo,new_geo)
     if move_dist_m > 0:
@@ -316,49 +316,52 @@ class ArdupilotFakeGPS(object):
   # NEPI Fake GPS Interfaces
 
 
+  #######################
+  # NEPI Fake GPS Interfaces
+
+    ### Callback to set fake gps enable
+  def fakeGPSEnableCb(self,msg):
+    rospy.loginfo("RBX_FAKE_GPS: Received set fake gps enable message: " + str(msg.data))
+    self.fake_gps_enabled = msg.data
+    self.status_pub.publish(self.fake_gps_enabled)
+
   def fakeGPSResetCb(self,msg):
-    rospy.loginfo('***********************')
-    rospy.loginfo("Received Fake GPS Reset Msg")
-    success = self.reset_gps()
-    if success:
-      rospy.loginfo("RBX_FAKE_GPS: Reset Complete")
-    return success
+    if self.fake_gps_enabled:
+      rospy.loginfo("Received Fake GPS Reset Msg")
+      success = self.reset_gps()
+      if success:
+        rospy.loginfo("RBX_FAKE_GPS: Reset Complete")
+      return success
 
   ### Function to reset gps and wait for position ned x,y to reset
   def reset_gps(self):
-    self.fake_gps_ready = False
-    time.sleep(1)
-    new_location = GeoPoint()
-    new_location.latitude = self.current_home_wgs84_geo.latitude
-    new_location.longitude = self.current_home_wgs84_geo.longitude
-    new_location.altitude = self.current_home_wgs84_geo.altitude
-    self.current_location_wgs84_geo = new_location
-    #rospy.loginfo("RBX_FAKE_GPS: Waiting for GPS to reset") 
-    for i in range(90):
-      self.publishFakeGPS()
-      time.sleep(.1)
-    self.fake_gps_ready = True
-    return True
+    if self.fake_gps_enabled:
+      self.fake_gps_ready = False
+      time.sleep(1)
+      new_location = GeoPoint()
+      new_location.latitude = self.current_home_wgs84_geo.latitude
+      new_location.longitude = self.current_home_wgs84_geo.longitude
+      new_location.altitude = self.current_home_wgs84_geo.altitude
+      self.current_location_wgs84_geo = new_location
+      #rospy.loginfo("RBX_FAKE_GPS: Waiting for GPS to reset") 
+      for i in range(90):
+        self.publishFakeGPS()
+        time.sleep(.1)
+      self.fake_gps_ready = True
+      return True
 
-  ### Callback to set fake gps enable
-  def fakeGPSEnableCB(self,msg):
-      rospy.loginfo('***********************')
-      rospy.loginfo("RBX_FAKE_GPS: Received set fake gps enable message")
-      rospy.loginfo(msg)
-      self.fake_gps_enabled = msg.data
-      self.status_pub.publish(self.fake_gps_enabled)
 
   ### Callback to set home
   def fakeGPSSetHomeCB(self,geo_msg):
-      rospy.loginfo('***********************')
+    if self.fake_gps_enabled:
       rospy.loginfo("RBX_FAKE_GPS: Received set home message")
-      rospy.loginfo(geo_msg)
+      #rospy.loginfo(geo_msg)
       self.current_home_wgs84_geo = geo_msg
 
 
   ### Callback to set home current
   def fakeGPSSetHomeCurCB(self,empty_msg):
-      rospy.loginfo('***********************')
+    if self.fake_gps_enabled:
       rospy.loginfo("RBX_FAKE_GPS: Received set home current message")
       new_location = GeoPoint()
       new_location.latitude = self.current_location_wgs84_geo.latitude
@@ -368,60 +371,60 @@ class ArdupilotFakeGPS(object):
 
   ### Callback to go home
   def fakeGPSGoHomeCB(self,empty_msg):
-      rospy.loginfo('***********************')
+    if self.fake_gps_enabled:
       rospy.loginfo("RBX_FAKE_GPS: Received go home message")
       self.move(self.current_home_wgs84_geo)
 
   ### Function to monitor RBX GoTo Position Command Topics
   def fakeGPSGoPosCB(self,position_cmd_msg):
-    rospy.loginfo('***********************')
-    rospy.loginfo("RBX_FAKE_GPS: Recieved GoTo Position Message")
-    rospy.loginfo(position_cmd_msg)
-    new_position = [position_cmd_msg.x_meters,position_cmd_msg.y_meters,position_cmd_msg.z_meters,position_cmd_msg.yaw_deg]
-    rospy.loginfo("RBX_FAKE_GPS: Sending Fake GPS Setpoint Position Update")
-    new_geopoint_wgs84=nepi_nav.get_geopoint_at_body_point(self.current_location_wgs84_geo, \
-                                                  self.current_heading_deg, new_position)    
-    self.move(new_geopoint_wgs84)
+    if self.fake_gps_enabled:
+      rospy.loginfo("RBX_FAKE_GPS: Recieved GoTo Position Message")
+      #rospy.loginfo(position_cmd_msg)
+      new_position = [position_cmd_msg.x_meters,position_cmd_msg.y_meters,position_cmd_msg.z_meters,position_cmd_msg.yaw_deg]
+      rospy.loginfo("RBX_FAKE_GPS: Sending Fake GPS Setpoint Position Update")
+      new_geopoint_wgs84=nepi_nav.get_geopoint_at_body_point(self.current_location_wgs84_geo, \
+                                                    self.current_heading_deg, new_position)    
+      self.move(new_geopoint_wgs84)
 
 
   ### Function to monitor RBX GoTo Location Command Topics
   def fakeGPSGoLocCB(self,location_cmd_msg):
-    rospy.loginfo('***********************')
-    rospy.loginfo("RBX_FAKE_GPS: Recieved GoTo Location Message")
-    rospy.loginfo(location_cmd_msg)
-    new_location = [location_cmd_msg.lat,location_cmd_msg.long,location_cmd_msg.altitude_meters,location_cmd_msg.yaw_deg]
-    new_geopoint_wgs84=GeoPoint()
-    new_geopoint_wgs84.latitude = new_location[0]
-    new_geopoint_wgs84.longitude = new_location[1]
-    new_geopoint_wgs84.altitude = new_location[2]
-    self.move(new_geopoint_wgs84)
+    if self.fake_gps_enabled:
+      rospy.loginfo("RBX_FAKE_GPS: Recieved GoTo Location Message")
+      #rospy.loginfo(location_cmd_msg)
+      new_location = [location_cmd_msg.lat,location_cmd_msg.long,location_cmd_msg.altitude_meters,location_cmd_msg.yaw_deg]
+      new_geopoint_wgs84=GeoPoint()
+      new_geopoint_wgs84.latitude = new_location[0]
+      new_geopoint_wgs84.longitude = new_location[1]
+      new_geopoint_wgs84.altitude = new_location[2]
+      self.move(new_geopoint_wgs84)
 
 
   ### Callback to set mode
   def fakeGPSModeCB(self,mode_msg):
-    rospy.loginfo('***********************')
-    rospy.loginfo("RBX_FAKE_GPS: Recieved Set Mode Message")
-    rospy.loginfo(mode_msg)
-    mode_ind = mode_msg.data
-    if mode_ind < 0 or mode_ind > (len(self.rbx_cap_modes)-1):
-      rospy.loginfo("RBX_FAKE_GPS: No matching rbx mode found")
-    else:
-      set_mode_function = globals()[self.rbx_cap_modes[mode_ind]]
-      set_mode_function(self)
+    if self.fake_gps_enabled:
+      rospy.loginfo("RBX_FAKE_GPS: Recieved Set Mode Message")
+      #rospy.loginfo(mode_msg)
+      mode_ind = mode_msg.data
+      if mode_ind < 0 or mode_ind > (len(self.rbx_cap_modes)-1):
+        rospy.loginfo("RBX_FAKE_GPS: No matching rbx mode found")
+      else:
+        set_mode_function = globals()[self.rbx_cap_modes[mode_ind]]
+        set_mode_function(self)
 
   ### Callback to set mode
   def fakeGPSActionCB(self,action_msg):
-    rospy.loginfo('***********************')
-    rospy.loginfo("RBX_FAKE_GPS: Recieved Go Action Message")
-    rospy.loginfo(action_msg)
-    action_ind = action_msg.data
-    print(action_ind)
-    print((len(self.rbx_cap_actions)-1))
-    if action_ind < 0 or action_ind > (len(self.rbx_cap_actions)-1):
-      rospy.loginfo("RBX_FAKE_GPS: No matching rbx action found")
-    else:
-      set_action_function = globals()[self.rbx_cap_actions[action_ind]]
-      set_action_function(self)
+    if self.fake_gps_enabled:
+      rospy.loginfo("RBX_FAKE_GPS: Recieved Go Action Message")
+      #rospy.loginfo(action_msg)
+      action_ind = action_msg.data
+      print(action_ind)
+      print((len(self.rbx_cap_actions)-1))
+      if action_ind < 0 or action_ind > (len(self.rbx_cap_actions)-1):
+        rospy.loginfo("RBX_FAKE_GPS: No matching rbx action found")
+      else:
+        set_action_function = globals()[self.rbx_cap_actions[action_ind]]
+        set_action_function(self)
 
 
   #######################
