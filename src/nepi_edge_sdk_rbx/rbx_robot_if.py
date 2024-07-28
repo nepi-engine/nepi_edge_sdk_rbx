@@ -588,6 +588,10 @@ class ROSRBXRobotIF:
           self.fake_gps_enable_pub.publish(fake_gps_enabled) 
           self.fake_gps_reset_pub.publish(Empty()) 
         self.settings_if.updateFromParamServer()
+
+  
+    def setCurrentAsDefault(self):
+        pass # We only use the param server, no member variables to apply to param server
    
     def capabilities_query_callback(self, _):
         return self.capabilities_report
@@ -595,8 +599,6 @@ class ROSRBXRobotIF:
     def navpose_capabilities_query_callback(self, _):
         return self.navpose_capabilities_report  
 
-    def setCurrentAsDefault(self):
-        pass # We only use the param server, no member variables to apply to param server
            
     def __init__(self, device_info, capSettings, 
                  factorySettings, settingUpdateFunction, getSettingsFunction,
