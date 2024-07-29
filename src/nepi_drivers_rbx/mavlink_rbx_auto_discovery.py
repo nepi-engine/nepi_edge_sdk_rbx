@@ -22,7 +22,7 @@ from nepi_edge_sdk_base import nepi_ros
 from mavros_msgs.srv import VehicleInfoGet
 from mavros_msgs.msg import VehicleInfo
 
-sys.path.append("/opt/nepi/ros/lib/nepi_edge_sdk_rbx")
+sys.path.append("/opt/nepi/ros/lib/nepi_drivers_rbx")
 
 #Define Discovery Search Parameters
 BAUDRATE_LIST = [57600] # Just one supported baud rate at present
@@ -157,7 +157,7 @@ def mavlink_discover(active_port_list):
           # Start the ardupilot RBX interface for this mavlink connection)
           ardu_node_name = "ardupilot_" + port_str_short + "_" + addr_str
           rospy.loginfo("Mavlink_AD: " + "Starting ardupilot rbx node: " + ardu_node_name)
-          processor_run_cmd = ["rosrun", "nepi_edge_sdk_rbx", "ardupilot_rbx_node.py",
+          processor_run_cmd = ["rosrun", "nepi_drivers_rbx", "ardupilot_rbx_node.py",
                                 "__name:=" + ardu_node_name, f"__ns:={base_namespace}", f"_mavlink_namespace:={mavlink_node_name}"]
           ardu_subproc = subprocess.Popen(processor_run_cmd)
 
@@ -165,7 +165,7 @@ def mavlink_discover(active_port_list):
           # Start the ardupilot RBX interface for this mavlink connection)
           fgps_node_name = "fake_gps_" + port_str_short + "_" + addr_str
           rospy.loginfo("Mavlink_AD: " + "Starting fake gps rbx node: " + fgps_node_name)
-          processor_run_cmd = ["rosrun", "nepi_edge_sdk_rbx", "ardupilot_rbx_fake_gps.py",
+          processor_run_cmd = ["rosrun", "nepi_drivers_rbx", "ardupilot_rbx_fake_gps.py",
                                 "__name:=" + fgps_node_name, f"__ns:={base_namespace}", f"_mavlink_namespace:={mavlink_node_name}"]
           fgps_subproc = subprocess.Popen(processor_run_cmd)
 

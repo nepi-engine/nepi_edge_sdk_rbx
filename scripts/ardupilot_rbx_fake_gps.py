@@ -182,7 +182,7 @@ class ArdupilotFakeGPS(object):
 
         
     # Create Fake GPS controls subscribers
-    rospy.Subscriber("~enable", Bool, self.fakeGPSEnableCB)
+    rospy.Subscriber("~enable", Bool, self.fakeGPSEnableCb)
     rospy.Subscriber("~reset",Empty, self.fakeGPSResetCb)
     rospy.Subscriber("~goto_position", RBXGotoPosition, self.fakeGPSGoPosCB)
     rospy.Subscriber("~goto_location", RBXGotoLocation, self.fakeGPSGoLocCB)

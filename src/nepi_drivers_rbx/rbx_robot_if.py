@@ -18,6 +18,7 @@ import tf
 import random
 import sys
 import cv2
+import copy
 
 from nepi_edge_sdk_base import nepi_ros
 from nepi_edge_sdk_base import nepi_img
@@ -185,31 +186,7 @@ class ROSRBXRobotIF:
         #Convert image from ros to cv2
         bridge = CvBridge()
         cv2_img = bridge.imgmsg_to_cv2(img_msg, "bgr8")
-       # Overlay status info on image
-        if self.rbx_info.image_status_overlay:
-            box_x = 10
-            box_y = 10
-            box_w = 350
-            box_h = 450
-            # Add status box overlay
-            cv2.rectangle(cv2_img, (box_x, box_y), (box_w, box_h), (255, 255, 255), -1)
-            cv2_img = self.cv2_img # Initialize status image
-            # Overlay Status Text List
-            x=box_x+10 
-            y=box_y+20
-            status_str_msg = copy.deepcopy(self.status_str_msg)
-            for text in status_str_msg:
-                self.statusTextOverlay(cv2_img,text,x, y)
-                y = y + 20
-        # Create ROS Image message
-        bridge = CvBridge()
-        img_out_msg = bridge.cv2_to_imgmsg(cv2_img,"bgr8")#desired_encoding='passthrough')
-        # Publish new image to ros
-        if not rospy.is_shutdown():
-            self.rbx_image_pub.publish(img_out_msg)
-            # You can view the enhanced_2D_image topic at 
-            # //192.168.179.103:9091/ in a connected web browser
-        self.save_img2file('image',cv2_img,img_msg.header.stamp)
+        self.cv2_img = cv2_img
 
     ##############################
     # RBX Settings Topic Callbacks
@@ -299,12 +276,14 @@ class ROSRBXRobotIF:
         rospy.loginfo("RBX_IF: Received enable image overlay message")
         rospy.loginfo(enable_msg)
         rospy.set_param('~rbx/image_status_overlay', enable_msg.data)
+        self.publishInfo()
 
     ### Callback to set current process name
     def setProcessNameCb(self,set_process_name_msg):
         rospy.loginfo("RBX_IF: Received set process name message")
         rospy.loginfo(set_process_name_msg)
         self.rbx_status.process_current = (set_process_name_msg.data)
+
          
     
 
@@ -363,49 +342,42 @@ class ROSRBXRobotIF:
     ### Callback to start rbx go home
     def goHomeCb(self,home_msg):
         rospy.loginfo("RBX_IF: Received go home message")
-        time.sleep(1)
-        if self.autonomousControlsReadyFunction() is True:
-            if self.goHomeFunction is not None:
-                self.rbx_status.process_current = "Go Home"
-                self.rbx_cmd_success_current = False
-                self.rbx_status.ready = False
-                self.update_current_errors( [0,0,0,0,0,0,0] )
-                self.rbx_cmd_success_current = self.goHomeFunction()
-                if self.has_fake_gps:
-                  self.fake_gps_go_home_pub.publish(home_msg)
-                self.rbx_status.process_last = "Go Home"
-                self.rbx_status.process_current = "None"
-                self.rbx_status.cmd_success = self.rbx_cmd_success_current
-                self.update_prev_errors( [0,0,0,0,0,0,0] )
-                time.sleep(0.5)
-                self.rbx_status.ready = True
-                self.last_cmd_string = "nepi_rbx.go_rbx_home(self,timeout_s = " + str(self.rbx_info.cmd_timeout)
-                self.publishInfo()
-        else:
-            self.update_error_msg("Ignoring Go command, Autononous Controls not Ready")
+        if self.goHomeFunction is not None:
+            self.rbx_status.process_current = "Go Home"
+            self.rbx_cmd_success_current = False
+            self.rbx_status.ready = False
+            self.update_current_errors( [0,0,0,0,0,0,0] )
+            self.rbx_cmd_success_current = self.goHomeFunction()
+            if self.has_fake_gps:
+              self.fake_gps_go_home_pub.publish(home_msg)
+            self.rbx_status.process_last = "Go Home"
+            self.rbx_status.process_current = "None"
+            self.rbx_status.cmd_success = self.rbx_cmd_success_current
+            self.update_prev_errors( [0,0,0,0,0,0,0] )
+            time.sleep(0.5)
+            self.rbx_status.ready = True
+            self.last_cmd_string = "nepi_rbx.go_rbx_home(self,timeout_s = " + str(self.rbx_info.cmd_timeout)
+            self.publishInfo()
 
     ### Callback to start rbx stop
     def goStopCb(self,stop_msg):
         rospy.loginfo("RBX_IF: Received go stop message")
         rospy.loginfo(stop_msg)
         time.sleep(1)
-        if self.autonomousControlsReadyFunction() is True:
-            if self.goStopFunction is not None:
-                self.rbx_status.process_current = "Stop"
-                self.rbx_cmd_success_current = False
-                self.rbx_status.ready = False
-                self.update_current_errors( [0,0,0,0,0,0,0] )
-                self.rbx_cmd_success_current = self.goStopFunction()
-                self.rbx_status.process_last = "Stop"
-                self.rbx_status.process_current = "None"
-                self.rbx_status.cmd_success = self.rbx_cmd_success_current
-                self.update_prev_errors( [0,0,0,0,0,0,0] )
-                time.sleep(0.5)
-                self.rbx_status.ready = True
-                self.last_cmd_string = "nepi_rbx.go_rbx_stop(self,timeout_s = " + str(self.rbx_info.cmd_timeout)
-                self.publishInfo()
-        else:
-            self.update_error_msg("Ignoring Go command, Autononous Controls not Ready")
+        if self.goStopFunction is not None:
+            self.rbx_status.process_current = "Stop"
+            self.rbx_cmd_success_current = False
+            self.rbx_status.ready = False
+            self.update_current_errors( [0,0,0,0,0,0,0] )
+            self.rbx_cmd_success_current = self.goStopFunction()
+            self.rbx_status.process_last = "Stop"
+            self.rbx_status.process_current = "None"
+            self.rbx_status.cmd_success = self.rbx_cmd_success_current
+            self.update_prev_errors( [0,0,0,0,0,0,0] )
+            time.sleep(0.5)
+            self.rbx_status.ready = True
+            self.last_cmd_string = "nepi_rbx.go_rbx_stop(self,timeout_s = " + str(self.rbx_info.cmd_timeout)
+            self.publishInfo()
 
  
   ### Callback to execute action
@@ -537,13 +509,16 @@ class ROSRBXRobotIF:
     def fakeGPSEnableCb(self,msg):
         rospy.loginfo("RBX_IF: Received set set fake gps enable message")
         rospy.loginfo(msg)
-        rospy.set_param("~fake_gps_eabled",msg.data)
+        rospy.set_param('~rbx/fake_gps_enabled', msg.data)
         self.fake_gps_enable_pub.publish(msg.data)
+        self.publishInfo()
 
     ### Callback to enble fake gps
     def fakeGPSResetCb(self,msg):
         rospy.loginfo("RBX_IF: Received set set fake gps reset message")
         self.fake_gps_reset_pub.publish(Empty())
+        self.publishInfo()
+        
 
     ### Setup a regular background navpose get and update navpose data
     def updateNavPoseCb(self,timer):
@@ -619,7 +594,7 @@ class ROSRBXRobotIF:
         
         
         self.node_name = device_info["node_name"]
-        self.device_name = device_info["device_name"]
+        self.robot_name = device_info["robot_name"]
         self.identifier = device_info["identifier"]
         self.serial_num = device_info["serial_number"]
         self.hw_version = device_info["hw_version"]
@@ -692,7 +667,7 @@ class ROSRBXRobotIF:
           self.capabilities_report.has_battery_feedback = False
        
         # Create and start initializing Status values
-        self.factory_device_name = device_info["sensor_name"] + "_" + device_info["identifier"]
+        self.factory_device_name = device_info["robot_name"] + "_" + device_info["identifier"]
         self.init_device_name = rospy.get_param('~rbx/device_name', self.factory_device_name)
         rospy.set_param('~rbx/device_name', self.init_device_name)
         rospy.Subscriber('~rbx/update_device_name', String, self.updateDeviceNameCb, queue_size=1) # start local callbac
@@ -969,6 +944,8 @@ class ROSRBXRobotIF:
         self.rbx_info.home_long = home_location[1]
         self.rbx_info.home_alt = home_location[2]
 
+        self.rbx_info.fake_gps_enabled = rospy.get_param('~rbx/fake_gps_enabled', self.init_fake_gps_enabled)
+
        ## Update image source topic and subscriber if changed from last time.
         image_source = rospy.get_param('~rbx/image_source', self.rbx_info.image_source)
         if self.rbx_info.image_source != image_source:
@@ -983,7 +960,7 @@ class ROSRBXRobotIF:
               rospy.loginfo(e)
           # Try to find and subscribe to new image source topic
           #rospy.loginfo("RBX_IF: Looking for topic: " + self.rbx_info.image_source)
-          if image_topic != "None":  # If image topic exists subscribe
+          if image_source != "None":  # If image topic exists subscribe
             image_topic = nepi_ros.find_topic(image_source)
             rospy.loginfo("RBX_IF: Found image topic: " + image_topic)
             if image_topic != "":
@@ -999,6 +976,7 @@ class ROSRBXRobotIF:
               self.update_error_msg("RBX_IF: Image Source Set to: " + image_topic)
               self.rbx_info.image_source = "None"
               self.cv2_img = self.rbx_image_blank # Set to blank image if source topic is cleared.
+          
           rospy.set_param('~rbx/image_source', self.rbx_info.image_source)
         if not rospy.is_shutdown():
             #rospy.loginfo(self.rbx_info)
@@ -1072,10 +1050,39 @@ class ROSRBXRobotIF:
         status_str_msg.append(" R,P,Y Errors Degrees: ")
         status_str_msg.append(" " + '%.2f' % self.rbx_status.errors_prev.roll_deg + "," + '%.2f' % self.rbx_status.errors_prev.pitch_deg + "," + '%.2f' % self.rbx_status.errors_prev.yaw_deg)
         status_str_msg.append("")
+
+   
+
         self.status_str_msg = status_str_msg
         if not rospy.is_shutdown():
             self.rbx_status_pub.publish(self.rbx_status)
             self.rbx_status_str_pub.publish(status_str_msg)
+
+       # Create ROS Image message
+        cv2_img = copy.deepcopy(self.cv2_img) # Initialize status image
+        # Overlay status info on image
+        if self.rbx_info.image_status_overlay:
+            box_x = 10
+            box_y = 10
+            box_w = 350
+            box_h = 450
+            # Add status box overlay
+            cv2.rectangle(cv2_img, (box_x, box_y), (box_w, box_h), (255, 255, 255), -1)
+            # Overlay Status Text List
+            x=box_x+10 
+            y=box_y+20
+            status_str_msg = self.status_str_msg
+            for text in status_str_msg:
+                self.statusTextOverlay(cv2_img,text,x, y)
+                y = y + 20
+        bridge = CvBridge()
+        img_out_msg = bridge.cv2_to_imgmsg(cv2_img,"bgr8")#desired_encoding='passthrough')
+        # Publish new image to ros
+        if not rospy.is_shutdown():
+            self.rbx_image_pub.publish(img_out_msg)
+            # You can view the enhanced_2D_image topic at 
+            # //192.168.179.103:9091/ in a connected web browser
+        self.save_img2file('image',cv2_img,img_out_msg.header.stamp)
  
  
         
