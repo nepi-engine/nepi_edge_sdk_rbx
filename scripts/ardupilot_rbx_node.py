@@ -129,10 +129,17 @@ class ArdupilotRBX():
   takeoff_complete = False
   takeoff_reset_modes = ["LAND","RTL"]
 
+  home_loc = GeoPoint()
+  home_loc.latitude = -999
+  home_loc.longitude = -999
+  home_loc.altitude = -999
+  home_location = home_loc
+
+  stop_triggered = False
+
   #######################
   ### Node Initialization
   def __init__(self):
-
     ###################################################
     # Get Mavlink NameSpace
     try:
@@ -276,13 +283,14 @@ class ArdupilotRBX():
                                   modes = self.RBX_MODES,
                                   getModeIndFunction = self.getModeInd,
                                   setModeIndFunction = self.setModeInd,
+                                  checkStopFunction = self.checkStopFunction,
                                   actions = self.RBX_ACTIONS, 
                                   setActionIndFunction = self.setActionInd,
                                   manualControlsReadyFunction = None, #self.manualControlsReady,
                                   getMotorControlRatios=None,
                                   setMotorControlRatio=None,
                                   autonomousControlsReadyFunction = self.autonomousControlsReady,
-                                  getHomeFunction=None,setHomeFunction=None,
+                                  getHomeFunction=self.getHomeLocation,setHomeFunction=self.setHomeLocation,
                                   goHomeFunction = self.goHome, 
                                   goStopFunction = self.goStop, 
                                   gotoPoseFunction = self.gotoPose,
@@ -400,11 +408,21 @@ class ArdupilotRBX():
         #self.takeoff_complete = False
     return success
     
+  def checkStopFunction(self):
+    triggered = self.stop_triggered
+    self.stop_triggered = False # Reset Stop Trigger
+    return triggered
+
   def getBatteryPercent(self):
     return self.battery_percent
 
-  def setHomeCurrent(self):
-    self.sethome_current()
+  def setHomeLocation(self,geo_point):
+    self.set_home_location(geo_point)
+
+  def getHomeLocation(self):
+    return self.home_location
+
+    self.get_home_location(geo_point)
 
   def setMotorControlRatio(self,motor_ind,speed_ratio):
     pass
@@ -554,6 +572,7 @@ class ArdupilotRBX():
 
   ### Function to set mavlink armed state
   def set_mavlink_arm_state(self,arm_value):
+    last_arm_value = self.mavlink_state.armed
     arm_cmd = CommandBoolRequest()
     arm_cmd.value = arm_value
     self.publishMsg("Updating armed")
@@ -572,6 +591,12 @@ class ArdupilotRBX():
       #self.publishMsg("Cur Value: " + str(self.mavlink_state.armed))
     if self.mavlink_state.armed == arm_value:
       self.publishMsg("Armed value set to " + str(arm_value))
+      if arm_value == True and arm_value != last_arm_value:
+        home_loc = GeoPoint()
+        home_loc.latitude = self.rbx_if.current_location_wgs84_geo[0]
+        home_loc.longitude = self.rbx_if.current_location_wgs84_geo[1]
+        home_loc.altitude = self.rbx_if.current_location_wgs84_geo[3]
+        self.home_location = home_loc
     else:
       self.publishMsg("Setting Armed value timed-out")
   
@@ -748,14 +773,36 @@ class ArdupilotRBX():
     return cmd_success
 
 
-  ### Function for sending set home current
-  global sethome_current
-  def sethome_current(self):
-    self.publishMsg('Sending mavlink set home current command')
+  ### Function for setting home location
+  def set_home_location(self,geo_point):
+    self.publishMsg('Sending mavlink set home command')
     time.sleep(.1) # VERY IMPORTANT - Sleep a bit between declaring a publisher and using it
-    self.set_home_client(current_gps=True)
+    cmd_home = CommandHomeRequest()
+    cmd_home.current_gps = False
+    cmd_home.latitude = geo_point.latitude
+    cmd_home.longitude = geo_point.longitude
+    cmd_home.altitude = geo_point.altitude
+    self.set_home_client(cmd_home)
+    self.home_location = geo_point
     cmd_success = True
     return cmd_success
+
+
+  ### Function for setting home location
+  def set_home_current(self):
+    self.publishMsg('Sending mavlink set home current command')
+    time.sleep(.1) # VERY IMPORTANT - Sleep a bit between declaring a publisher and using it
+    cmd_home = CommandHomeRequest()
+    cmd_home.current_gps = True
+    self.set_home_client(cmd_home)
+    home_loc = GeoPoint()
+    home_loc.latitude = self.rbx_if.current_location_wgs84_geo[0]
+    home_loc.longitude = self.rbx_if.current_location_wgs84_geo[1]
+    home_loc.altitude = self.rbx_if.current_location_wgs84_geo[3]
+    self.home_location = home_loc
+    cmd_success = True
+    return cmd_success
+
 
 
 

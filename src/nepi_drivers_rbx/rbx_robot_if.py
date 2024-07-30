@@ -33,7 +33,7 @@ from sensor_msgs.msg import Image, NavSatFix, BatteryState
 from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3, PoseStamped
 from geographic_msgs.msg import GeoPoint, GeoPose, GeoPoseStamped
 from mavros_msgs.msg import State, AttitudeTarget
-from mavros_msgs.srv import CommandBool, CommandBoolRequest, SetMode, SetModeRequest, CommandTOL, CommandHome
+from mavros_msgs.srv import CommandBool, CommandBoolRequest, SetMode, SetModeRequest, CommandTOL, CommandHome, CommandHomeRequest
 from pygeodesy.ellipsoidalKarney import LatLon
 from cv_bridge import CvBridge
 
@@ -582,7 +582,7 @@ class ROSRBXRobotIF:
                  axisControls,getBatteryPercentFunction,
                  states,getStateIndFunction,setStateIndFunction,
                  modes,getModeIndFunction,setModeIndFunction,
-                 getStopFunction,
+                 checkStopFunction,
                  actions, setActionIndFunction,
                  getHomeFunction=None,setHomeFunction=None,
                  manualControlsReadyFunction=None,
@@ -611,7 +611,7 @@ class ROSRBXRobotIF:
         self.getModeIndFunction = getModeIndFunction
         self.setModeIndFunction = setModeIndFunction
         
-        self.getStopFunction = getStopFunction
+        self.checkStopFunction = checkStopFunction
 
         # Create the CV bridge. Do this early so it can be used in the threading run() methods below 
         # TODO: Need one per image output type for thread safety?
@@ -942,7 +942,8 @@ class ROSRBXRobotIF:
         self.rbx_info.state = self.getStateIndFunction()
         self.rbx_info.mode = self.getModeIndFunction()
         if self.getHomeFunction is not None:
-          home_location = self.getHomeFunction()
+          home_geo = self.getHomeFunction()
+          home_location = [home_geo.latitude,home_geo.longitude,home_geo.altitude]
         else: 
           home_location = self.home_location        
         self.rbx_info.home_lat = home_location[0]
@@ -1186,7 +1187,7 @@ class ROSRBXRobotIF:
       timeout_timer = 0 # Initialize timeout timer
       attitude_errors = [] # Initialize running list of errors
       while setpoint_attitude_reached is False and not rospy.is_shutdown():  # Wait for setpoint goal to be set
-        if self.getStopFunction() is True:
+        if self.checkStopFunction() is True:
             rospy.loginfo("RBX_IF: Setpoint Attitude received Stop Command")
             new_attitude_ned_degs = copy.deepcopy(cur_attitude_ned_degs)
         if timeout_timer > timeout_sec:
@@ -1334,7 +1335,7 @@ class ROSRBXRobotIF:
       yaw_errors = [] # Initialize running list of errors
       timeout_timer = 0 # Initialize timeout timer
       while setpoint_position_local_point_reached is False or setpoint_position_local_yaw_reached is False and not rospy.is_shutdown():  # Wait for setpoint goal to be set
-        if self.getStopFunction() is True:
+        if self.checkStopFunction() is True:
             rospy.loginfo("RBX_IF: Setpoint Position received Stop Command")
             new_point_ned_m = copy.deepcopy(self.current_position_ned_m)
         if timeout_timer > timeout_sec:
@@ -1484,7 +1485,7 @@ class ROSRBXRobotIF:
       yaw_errors = [] # Initialize running list of errors
       timeout_timer = 0 # Initialize timeout timer
       while (setpoint_location_global_geopoint_reached is False or setpoint_location_global_yaw_reached is False) and not rospy.is_shutdown(): # Wait for setpoint goal to be set
-        if self.getStopFunction() is True:
+        if self.checkStopFunction() is True:
           rospy.loginfo("RBX_IF: Setpoint Location received Stop Command")
           new_geopoint_wgs84 = copy.deepcopy(self.current_location_wgs84_geo)
         if timeout_timer > timeout_sec:
