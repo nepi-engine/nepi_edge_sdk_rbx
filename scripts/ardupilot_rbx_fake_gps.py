@@ -93,7 +93,7 @@ class ArdupilotFakeGPS(object):
   #######################
   ### Node Initialization
   def __init__(self):
-
+    self.stop_triggered = False
     # Get Mavlink NameSpace
     try:
       mavlink_namespace = rospy.get_param('~mavlink_namespace') # Throw exception if not present
@@ -184,6 +184,7 @@ class ArdupilotFakeGPS(object):
     # Create Fake GPS controls subscribers
     rospy.Subscriber("~enable", Bool, self.fakeGPSEnableCb)
     rospy.Subscriber("~reset",Empty, self.fakeGPSResetCb)
+    rospy.Subscriber("~go_stop", Empty, self.fakeGPSGoStopCB)
     rospy.Subscriber("~goto_position", RBXGotoPosition, self.fakeGPSGoPosCB)
     rospy.Subscriber("~goto_location", RBXGotoLocation, self.fakeGPSGoLocCB)
     rospy.Subscriber("~set_home", GeoPoint, self.fakeGPSSetHomeCB)
@@ -250,7 +251,7 @@ class ArdupilotFakeGPS(object):
     #rospy.loginfo(delta_geo)
     
     move_dist_m = nepi_nav.distance_geopoints(org_geo,new_geo)
-    if move_dist_m > 0:
+    if move_dist_m > 0 and self.getStopFunction() == false:
       move_time = self.MOVE_UPDATE_TIME_SEC_PER_METER * move_dist_m
       move_steps = move_time * self.GPS_PUB_RATE_HZ
       stp_interval_sec = float(move_time)/float(move_steps)
@@ -295,6 +296,10 @@ class ArdupilotFakeGPS(object):
       rospy.loginfo("RBX_FAKE_GPS: Current WGS84 Geo Location ")
       rospy.loginfo(self.current_location_wgs84_geo)
 
+  def getStopFunction(self):
+    triggered = self.stop_triggered
+    self.stop_triggered = False # Reset Stop Trigger
+    return triggered
 
   #######################
   # NEPI NavPose Interfaces
@@ -370,14 +375,25 @@ class ArdupilotFakeGPS(object):
       self.current_home_wgs84_geo = self.current_location_wgs84_geo
 
   ### Callback to go home
+  def fakeGPSGoStopCB(self,empty_msg):
+    if self.fake_gps_enabled:
+      rospy.loginfo("RBX_FAKE_GPS: Received go stop message")
+      self.stop_triggered == True
+
+
+  ### Callback to go home
   def fakeGPSGoHomeCB(self,empty_msg):
     if self.fake_gps_enabled:
       rospy.loginfo("RBX_FAKE_GPS: Received go home message")
+      self.stop_triggered == True
+      time.sleep(1)
+      self.stop_triggered == False
       self.move(self.current_home_wgs84_geo)
 
   ### Function to monitor RBX GoTo Position Command Topics
   def fakeGPSGoPosCB(self,position_cmd_msg):
     if self.fake_gps_enabled:
+      self.getStopFunction() # Clear stop trigger
       rospy.loginfo("RBX_FAKE_GPS: Recieved GoTo Position Message")
       #rospy.loginfo(position_cmd_msg)
       new_position = [position_cmd_msg.x_meters,position_cmd_msg.y_meters,position_cmd_msg.z_meters,position_cmd_msg.yaw_deg]
@@ -390,6 +406,7 @@ class ArdupilotFakeGPS(object):
   ### Function to monitor RBX GoTo Location Command Topics
   def fakeGPSGoLocCB(self,location_cmd_msg):
     if self.fake_gps_enabled:
+      self.getStopFunction() # Clear stop trigger
       rospy.loginfo("RBX_FAKE_GPS: Recieved GoTo Location Message")
       #rospy.loginfo(location_cmd_msg)
       new_location = [location_cmd_msg.lat,location_cmd_msg.long,location_cmd_msg.altitude_meters,location_cmd_msg.yaw_deg]
@@ -403,6 +420,7 @@ class ArdupilotFakeGPS(object):
   ### Callback to set mode
   def fakeGPSModeCB(self,mode_msg):
     if self.fake_gps_enabled:
+      self.getStopFunction() # Clear stop trigger
       rospy.loginfo("RBX_FAKE_GPS: Recieved Set Mode Message")
       #rospy.loginfo(mode_msg)
       mode_ind = mode_msg.data
@@ -415,6 +433,7 @@ class ArdupilotFakeGPS(object):
   ### Callback to set mode
   def fakeGPSActionCB(self,action_msg):
     if self.fake_gps_enabled:
+      self.getStopFunction() # Clear stop trigger
       rospy.loginfo("RBX_FAKE_GPS: Recieved Go Action Message")
       #rospy.loginfo(action_msg)
       action_ind = action_msg.data

@@ -370,6 +370,8 @@ class ROSRBXRobotIF:
             self.rbx_status.ready = False
             self.update_current_errors( [0,0,0,0,0,0,0] )
             self.rbx_cmd_success_current = self.goStopFunction()
+            if self.has_fake_gps:
+            	self.fake_gps_go_stop_pub.publish(stop_msg)
             self.rbx_status.process_last = "Stop"
             self.rbx_status.process_current = "None"
             self.rbx_status.cmd_success = self.rbx_cmd_success_current
@@ -580,6 +582,7 @@ class ROSRBXRobotIF:
                  axisControls,getBatteryPercentFunction,
                  states,getStateIndFunction,setStateIndFunction,
                  modes,getModeIndFunction,setModeIndFunction,
+                 getStopFunction,
                  actions, setActionIndFunction,
                  getHomeFunction=None,setHomeFunction=None,
                  manualControlsReadyFunction=None,
@@ -608,6 +611,7 @@ class ROSRBXRobotIF:
         self.getModeIndFunction = getModeIndFunction
         self.setModeIndFunction = setModeIndFunction
         
+        self.getStopFunction = getStopFunction
 
         # Create the CV bridge. Do this early so it can be used in the threading run() methods below 
         # TODO: Need one per image output type for thread safety?
@@ -650,6 +654,7 @@ class ROSRBXRobotIF:
           self.fake_gps_enable_pub = rospy.Publisher(fake_gps_namespace + "enable", Bool, queue_size=1)
           rospy.Subscriber("~rbx/reset_fake_gps", Empty, self.fakeGPSResetCb)
           self.fake_gps_reset_pub = rospy.Publisher(fake_gps_namespace + "reset", Empty, queue_size=1)
+          self.fake_gps_go_stop_pub = rospy.Publisher(fake_gps_namespace + "go_stop", Empty, queue_size=1)
           self.fake_gps_goto_position_pub = rospy.Publisher(fake_gps_namespace + "goto_position", RBXGotoPosition, queue_size=1)
           self.fake_gps_goto_location_pub = rospy.Publisher(fake_gps_namespace + "goto_location", RBXGotoLocation, queue_size=1)
           self.fake_gps_set_home_pub = rospy.Publisher(fake_gps_namespace + "set_home",GeoPoint , queue_size=1)
@@ -1181,6 +1186,9 @@ class ROSRBXRobotIF:
       timeout_timer = 0 # Initialize timeout timer
       attitude_errors = [] # Initialize running list of errors
       while setpoint_attitude_reached is False and not rospy.is_shutdown():  # Wait for setpoint goal to be set
+        if self.getStopFunction() is True:
+            rospy.loginfo("RBX_IF: Setpoint Attitude received Stop Command")
+            new_attitude_ned_degs = copy.deepcopy(cur_attitude_ned_degs)
         if timeout_timer > timeout_sec:
           self.update_error_msg("Setpoint cmd timed out")
           cmd_success = False
@@ -1326,6 +1334,9 @@ class ROSRBXRobotIF:
       yaw_errors = [] # Initialize running list of errors
       timeout_timer = 0 # Initialize timeout timer
       while setpoint_position_local_point_reached is False or setpoint_position_local_yaw_reached is False and not rospy.is_shutdown():  # Wait for setpoint goal to be set
+        if self.getStopFunction() is True:
+            rospy.loginfo("RBX_IF: Setpoint Position received Stop Command")
+            new_point_ned_m = copy.deepcopy(self.current_position_ned_m)
         if timeout_timer > timeout_sec:
           self.update_error_msg("Setpoint cmd timed out")
           cmd_success = False
@@ -1472,7 +1483,10 @@ class ROSRBXRobotIF:
       geopoint_errors = [] # Initialize running list of errors
       yaw_errors = [] # Initialize running list of errors
       timeout_timer = 0 # Initialize timeout timer
-      while setpoint_location_global_geopoint_reached is False or setpoint_location_global_yaw_reached is False and not rospy.is_shutdown(): # Wait for setpoint goal to be set
+      while (setpoint_location_global_geopoint_reached is False or setpoint_location_global_yaw_reached is False) and not rospy.is_shutdown(): # Wait for setpoint goal to be set
+        if self.getStopFunction() is True:
+          rospy.loginfo("RBX_IF: Setpoint Location received Stop Command")
+          new_geopoint_wgs84 = copy.deepcopy(self.current_location_wgs84_geo)
         if timeout_timer > timeout_sec:
           self.update_error_msg("Setpoint cmd timed out")
           cmd_success = False
