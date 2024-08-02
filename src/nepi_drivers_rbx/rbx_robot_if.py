@@ -87,18 +87,19 @@ class ROSRBXRobotIF:
     update_navpose_interval_sec = float(1)/UPDATE_NAVPOSE_RATE_HZ
 
     ## Initialize Class Variables
-    current_heading_deg = None
-    current_orientation_enu_degs = None
-    current_orientation_ned_degs = None
-    current_position_enu_m = None
-    current_position_ned_m = None
-    current_location_amsl_geo = None
-    current_location_wgs84_geo = None
+    current_heading_deg = 0
+    current_orientation_enu_degs = [0,0,0]
+    current_orientation_ned_degs = [0,0,0]
+    current_position_enu_m = [0,0,0]
+    current_position_ned_m = [0,0,0]
+    current_location_amsl_geo = [0,0,0]
+    current_location_wgs84_geo = [0,0,0]
     current_geoid_height_m = 0
     
     home_location = [0,0,0]
     last_cmd_string = ""
 
+    rbx_image_sub = None
     rbx_state_last = None
     rbx_mode_last = None
     rbx_image_blank = np.zeros((350, 700, 3), dtype = np.uint8) # Empty Black Image
@@ -120,8 +121,6 @@ class ROSRBXRobotIF:
         rospy.set_param('~rbx/image_status_overlay', False)  
         rospy.set_param('~rbx/fake_gps_enabled', False)
         rospy.set_param('~rbx/home_location', self.FACTORY_HOME_LOCATION)
-
-
         if self.setMotorControlRatio is not None:
           mc = RBXMotorControl()
           mc.speed_ratio = 0.0
@@ -214,7 +213,7 @@ class ROSRBXRobotIF:
             self.rbx_status.process_last = self.states[new_state_ind]
             self.rbx_status.process_current = "None"
             str_val = self.states[new_state_ind]
-            self.last_cmd_string = "nepi_rbx.set_rbx_state(self,'" + str_val + "',timeout_s = " + str(self.rbx_info.cmd_timeout)
+            self.last_cmd_string = "nepi_rbx.set_rbx_state(self,'" + str_val + "',timeout_sec = " + str(self.rbx_info.cmd_timeout)
         self.publishInfo()
         
 
@@ -234,13 +233,11 @@ class ROSRBXRobotIF:
             self.rbx_status.process_current = self.modes[new_mode_ind]
             rospy.loginfo("RBX_IF: Setting rbx mode to : " + self.modes[new_mode_ind])
             rospy.loginfo("RBX_IF: Calling rbx mode function: " + self.modes[new_mode_ind])
-            if self.has_fake_gps:
-                self.fake_gps_set_mode_pub.publish(new_mode_ind)
             self.setModeIndFunction(new_mode_ind)
             self.rbx_status.process_last = self.modes[new_mode_ind]
             self.rbx_status.process_current = "None"
             str_val = self.modes[new_mode_ind]
-            self.last_cmd_string = "nepi_rbx.set_rbx_mode(self,'" + str_val + "',timeout_s = " + str(self.rbx_info.cmd_timeout)
+            self.last_cmd_string = "nepi_rbx.set_rbx_mode(self,'" + str_val + "',timeout_sec = " + str(self.rbx_info.cmd_timeout)
         self.publishInfo()
 
 
@@ -320,12 +317,16 @@ class ROSRBXRobotIF:
     def setHomeCb(self,geo_msg):
         rospy.loginfo("RBX_IF: Received set home message")
         rospy.loginfo(geo_msg)
-        new_home_location = [geo_msg.latitude,geo_msg.longitude,geo_msg.altitude]
+        new_home_loc = [geo_msg.latitude,geo_msg.longitude,geo_msg.altitude]
+        for i, loc in enumerate(new_home_loc):
+          if loc == -999:
+            new_home_loc[i] = self.current_location_wgs84_geo[i]
         if self.setHomeFunction is not None:
-            self.setHomeFunction(new_home_location)
-        if self.has_fake_gps:
-            self.fake_gps_set_home_pub.publish(geo_msg)
-        self.home_location = new_home_location
+            new_home_geo = GeoPoint()
+            new_home_geo.latitude = new_home_loc[0]
+            new_home_geo.longitude = new_home_loc[1]
+            new_home_geo.altitude = new_home_loc[2]
+            self.setHomeFunction(new_home_geo)
 
 
     ### Callback to set home current
@@ -333,9 +334,7 @@ class ROSRBXRobotIF:
         rospy.loginfo("RBX_IF: Received set home current message")
         if self.setHomeFunction is not None:
             self.setHomeFunction(self.current_location_wgs84_geo)
-        if self.has_fake_gps:
-            self.fake_gps_set_home_current_pub.publish(empty_msg)
-        self.home_location = self.current_location_wgs84_geo
+
           
 
 
@@ -346,17 +345,15 @@ class ROSRBXRobotIF:
             self.rbx_status.process_current = "Go Home"
             self.rbx_cmd_success_current = False
             self.rbx_status.ready = False
+            self.update_prev_errors()
             self.update_current_errors( [0,0,0,0,0,0,0] )
             self.rbx_cmd_success_current = self.goHomeFunction()
-            if self.has_fake_gps:
-              self.fake_gps_go_home_pub.publish(home_msg)
             self.rbx_status.process_last = "Go Home"
             self.rbx_status.process_current = "None"
             self.rbx_status.cmd_success = self.rbx_cmd_success_current
-            self.update_prev_errors( [0,0,0,0,0,0,0] )
             time.sleep(0.5)
             self.rbx_status.ready = True
-            self.last_cmd_string = "nepi_rbx.go_rbx_home(self,timeout_s = " + str(self.rbx_info.cmd_timeout)
+            self.last_cmd_string = "nepi_rbx.go_rbx_home(self,timeout_sec = " + str(self.rbx_info.cmd_timeout)
             self.publishInfo()
 
     ### Callback to start rbx stop
@@ -368,17 +365,15 @@ class ROSRBXRobotIF:
             self.rbx_status.process_current = "Stop"
             self.rbx_cmd_success_current = False
             self.rbx_status.ready = False
+            self.update_prev_errors()
             self.update_current_errors( [0,0,0,0,0,0,0] )
             self.rbx_cmd_success_current = self.goStopFunction()
-            if self.has_fake_gps:
-            	self.fake_gps_go_stop_pub.publish(stop_msg)
             self.rbx_status.process_last = "Stop"
             self.rbx_status.process_current = "None"
             self.rbx_status.cmd_success = self.rbx_cmd_success_current
-            self.update_prev_errors( [0,0,0,0,0,0,0] )
             time.sleep(0.5)
             self.rbx_status.ready = True
-            self.last_cmd_string = "nepi_rbx.go_rbx_stop(self,timeout_s = " + str(self.rbx_info.cmd_timeout)
+            self.last_cmd_string = "nepi_rbx.go_rbx_stop(self,timeout_sec = " + str(self.rbx_info.cmd_timeout)
             self.publishInfo()
 
  
@@ -399,8 +394,6 @@ class ROSRBXRobotIF:
                     self.rbx_status.ready = False
                     self.rbx_cmd_success_current = False
                     rospy.loginfo("RBX_IF: Starting action: " + self.actions[action_ind])
-                    if self.has_fake_gps:
-                        self.fake_gps_go_action_pub.publish(action_msg)
                     success = self.setActionIndFunction(action_ind)
                     self.rbx_cmd_success_current = success
                     if success:
@@ -414,7 +407,7 @@ class ROSRBXRobotIF:
                     self.rbx_status.ready = True
 
                     str_val = self.actions[action_ind]
-                    self.last_cmd_string = "nepi_rbx.go_rbx_action(self,'" + str_val + "',timeout_s = " + str(self.rbx_info.cmd_timeout)
+                    self.last_cmd_string = "nepi_rbx.go_rbx_action(self,'" + str_val + "',timeout_sec = " + str(self.rbx_info.cmd_timeout)
                     self.publishInfo()
         else:
             self.update_error_msg("Ignoring Go Action command, no Set Action Function")
@@ -442,7 +435,7 @@ class ROSRBXRobotIF:
                 self.rbx_status.ready = True
 
                 str_val = str(setpoint_data)
-                self.last_cmd_string = "nepi_rbx.goto_rbx_pose(self,'" + str_val + "',timeout_s = " + str(self.rbx_info.cmd_timeout)
+                self.last_cmd_string = "nepi_rbx.goto_rbx_pose(self,'" + str_val + "',timeout_sec = " + str(self.rbx_info.cmd_timeout)
                 self.publishInfo()
         else:
             self.update_error_msg("Ignoring Go command, Autononous Controls not Ready")
@@ -454,7 +447,7 @@ class ROSRBXRobotIF:
         rospy.loginfo("RBX_IF: Recieved GoTo Position Command Message")
         rospy.loginfo(position_cmd_msg)
         time.sleep(1)
-        if self.rbx_status.manual_motor_control_mode_ready is False:
+        if self.rbx_status.manual_control_mode_ready is False:
             setpoint_data=[position_cmd_msg.x_meters,position_cmd_msg.y_meters,position_cmd_msg.z_meters,position_cmd_msg.yaw_deg]
             if self.rbx_status.ready is False:
                 self.update_error_msg("Ignoring GoTo Position Request, Another GoTo Command Process is Active")
@@ -463,9 +456,6 @@ class ROSRBXRobotIF:
                 self.rbx_status.ready = False
                 self.rbx_cmd_success_current = False
                 self.update_current_errors( [0,0,0,0,0,0,0] )
-                self.rbx_status.ready = False
-                if self.has_fake_gps:
-                  self.fake_gps_goto_position_pub.publish(position_cmd_msg)
                 self.rbx_cmd_success_current = self.setpoint_position_local_body(setpoint_data)
                 self.rbx_status.process_last = "GoTo Position"
                 self.rbx_status.process_current = "None"
@@ -474,7 +464,7 @@ class ROSRBXRobotIF:
                 self.rbx_status.ready = True
                 
                 str_val = str(setpoint_data)
-                self.last_cmd_string = "nepi_rbx.goto_rbx_position(self,'" + str_val + "',timeout_s = " + str(self.rbx_info.cmd_timeout)
+                self.last_cmd_string = "nepi_rbx.goto_rbx_position(self,'" + str_val + "',timeout_sec = " + str(self.rbx_info.cmd_timeout)
                 self.publishInfo()
         else:
             self.update_error_msg("Ignoring Go command, Autononous Controls not Ready")
@@ -492,8 +482,6 @@ class ROSRBXRobotIF:
                 self.rbx_status.ready = False
                 self.rbx_cmd_success_current = False
                 self.update_current_errors( [0,0,0,0,0,0,0] )
-                if self.has_fake_gps:
-                  self.fake_gps_goto_location_pub.publish(location_cmd_msg)
                 self.rbx_cmd_success_current = self.setpoint_location_global_wgs84(setpoint_data)
                 self.rbx_status.process_last = "GoTo Location"
                 self.rbx_status.process_current = "None"
@@ -502,7 +490,7 @@ class ROSRBXRobotIF:
                 self.rbx_status.ready = True
 
                 str_val = str(setpoint_data)
-                self.last_cmd_string = "nepi_rbx.goto_rbx_location(self,'" + str_val + "',timeout_s = " + str(self.rbx_info.cmd_timeout)
+                self.last_cmd_string = "nepi_rbx.goto_rbx_location(self,'" + str_val + "',timeout_sec = " + str(self.rbx_info.cmd_timeout)
                 self.publishInfo()
         else:
             self.update_error_msg("Ignoring Go command, Autononous Controls not Ready")
@@ -512,15 +500,8 @@ class ROSRBXRobotIF:
         rospy.loginfo("RBX_IF: Received set set fake gps enable message")
         rospy.loginfo(msg)
         rospy.set_param('~rbx/fake_gps_enabled', msg.data)
-        self.fake_gps_enable_pub.publish(msg.data)
+        self.setFakeGPSFunction(msg.data)
         self.publishInfo()
-
-    ### Callback to enble fake gps
-    def fakeGPSResetCb(self,msg):
-        rospy.loginfo("RBX_IF: Received set set fake gps reset message")
-        self.fake_gps_reset_pub.publish(Empty())
-        self.publishInfo()
-        
 
     ### Setup a regular background navpose get and update navpose data
     def updateNavPoseCb(self,timer):
@@ -554,16 +535,16 @@ class ROSRBXRobotIF:
 
 
     def updateFromParamServer(self):
-        if self.has_fake_gps:
-          home_location = rospy.get_param('~rbx/home_location', self.init_home_location)
-          new_home = GeoPoint()
-          new_home.latitude = home_location[0]
-          new_home.longitude = home_location[1]
-          new_home.altitude = home_location[2]
-          self.fake_gps_set_home_pub.publish(new_home)
+        if self.setFakeGPSFunction:
           fake_gps_enabled = rospy.get_param('~rbx/fake_gps_enabled', self.init_fake_gps_enabled)
-          self.fake_gps_enable_pub.publish(fake_gps_enabled) 
-          self.fake_gps_reset_pub.publish(Empty()) 
+          self.setFakeGPSFunction(fake_gps_enabled) 
+        if self.setHomeFunction:
+          home_location = rospy.get_param('~rbx/home_location', self.init_home_location)
+          geo_home = GeoPoint()
+          geo_home.latitude = home_location[0]
+          geo_home.longitude = home_location[1]
+          geo_home.altitude = home_location[2]
+          self.setHomeFunction(geo_home)
         self.settings_if.updateFromParamServer()
 
   
@@ -592,7 +573,7 @@ class ROSRBXRobotIF:
                  goHomeFunction=None, goStopFunction=None, 
                  gotoPoseFunction=None, gotoPositionFunction=None, gotoLocationFunction=None,
                  gpsTopic=None,odomTopic=None,headingTopic=None,
-                 fake_gps_namespace = None
+                 setFakeGPSFunction = None
                  ):
         
         
@@ -646,24 +627,12 @@ class ROSRBXRobotIF:
 
         self.init_fake_gps_enabled = rospy.get_param('~rbx/fake_gps_enabled', False)
         rospy.set_param('~rbx/fake_gps_enabled', self.init_fake_gps_enabled)
-        rospy.loginfo("RBX_IF: Setting up fake gps publishers with namespace: " + fake_gps_namespace)
-        if fake_gps_namespace is not None:
-          self.has_fake_gps = True
+        self.setFakeGPSFunction = setFakeGPSFunction
+        if setFakeGPSFunction is not None:
           self.capabilities_report.has_fake_gps = True        
           rospy.Subscriber("~rbx/enable_fake_gps", Bool, self.fakeGPSEnableCb)
-          self.fake_gps_enable_pub = rospy.Publisher(fake_gps_namespace + "enable", Bool, queue_size=1)
-          rospy.Subscriber("~rbx/reset_fake_gps", Empty, self.fakeGPSResetCb)
-          self.fake_gps_reset_pub = rospy.Publisher(fake_gps_namespace + "reset", Empty, queue_size=1)
-          self.fake_gps_go_stop_pub = rospy.Publisher(fake_gps_namespace + "go_stop", Empty, queue_size=1)
-          self.fake_gps_goto_position_pub = rospy.Publisher(fake_gps_namespace + "goto_position", RBXGotoPosition, queue_size=1)
-          self.fake_gps_goto_location_pub = rospy.Publisher(fake_gps_namespace + "goto_location", RBXGotoLocation, queue_size=1)
-          self.fake_gps_set_home_pub = rospy.Publisher(fake_gps_namespace + "set_home",GeoPoint , queue_size=1)
-          self.fake_gps_set_home_current_pub = rospy.Publisher(fake_gps_namespace + "set_home_current", Empty, queue_size=1)
-          self.fake_gps_go_home_pub = rospy.Publisher(fake_gps_namespace + "go_home", Empty, queue_size=1)
-          self.fake_gps_set_mode_pub = rospy.Publisher(fake_gps_namespace + "set_mode" , UInt8, queue_size=1)
-          self.fake_gps_go_action_pub = rospy.Publisher(fake_gps_namespace + "go_action", UInt8, queue_size=1)
         else:
-          self.capabilities_report.has_fake_gps = True
+          self.capabilities_report.has_fake_gps = False
 
         self.getBatteryPercentFunction = getBatteryPercentFunction
         if self.getBatteryPercentFunction is not None:
@@ -687,9 +656,9 @@ class ROSRBXRobotIF:
         self.rbx_info.standby = False
         self.rbx_info.state = -999
         self.rbx_info.mode = -999
-        self.rbx_info.home_lat = self.home_location[0]
-        self.rbx_info.home_long = self.home_location[1]
-        self.rbx_info.home_alt = self.home_location[2]
+        self.rbx_info.home_lat = -999
+        self.rbx_info.home_long = -999
+        self.rbx_info.home_alt = -999
         error_bounds = RBXErrorBounds()
         error_bounds.max_distance_error_m = rospy.get_param('~rbx/max_error_m', self.FACTORY_GOTO_MAX_ERROR_M)
         error_bounds.max_rotation_error_deg = rospy.get_param('~rbx/max_error_deg', self.FACTORY_GOTO_MAX_ERROR_DEG)
@@ -698,8 +667,9 @@ class ROSRBXRobotIF:
         self.rbx_info.cmd_timeout = rospy.get_param('~rbx/cmd_timeout', self.FACTORY_CMD_TIMEOUT_SEC)
         self.rbx_info.image_source = rospy.get_param('~rbx/image_source', self.FACTORY_IMAGE_INPUT_TOPIC_NAME)
         self.rbx_info.image_status_overlay = rospy.get_param('~rbx/image_status_overlay', False) 
-        self.rbx_info.state = self.states[self.getStateIndFunction()]
-        self.rbx_info.mode = self.modes[self.getModeIndFunction()]
+
+        self.rbx_info.state = self.getStateIndFunction()
+        self.rbx_info.mode = self.getModeIndFunction()
         ## Update Control Info
         self.getMotorControlRatios = getMotorControlRatios
         if self.getMotorControlRatios is not None:
@@ -753,7 +723,7 @@ class ROSRBXRobotIF:
         # Set Up Manual Motor Controls
         self.manualControlsReadyFunction = manualControlsReadyFunction
         if self.manualControlsReadyFunction is not None:
-          self.rbx_status.manual_motor_control_mode_ready = self.manualControlsReadyFunction()
+          self.rbx_status.manual_control_mode_ready = self.manualControlsReadyFunction()
           manual_controls_ready = self.manualControlsReadyFunction()
           if manual_controls_ready:
             if self.setMotorControlRatio is not None:
@@ -763,7 +733,7 @@ class ROSRBXRobotIF:
                 mc.motor_ind = i
                 self.setMotorControlRatio(mc)
         else:
-          self.rbx_status.manual_motor_control_mode_ready = False
+          self.rbx_status.manual_control_mode_ready = False
 
         if self.getMotorControlRatios is not None:
           motor_controls_status_msg = self.get_motor_controls_status_msg(self.getMotorControlRatios())
@@ -773,9 +743,9 @@ class ROSRBXRobotIF:
 
         self.setMotorControlRatio = setMotorControlRatio
         if self.setMotorControlRatio is None:
-            self.capabilities_report.has_motor_controls = False
+            self.capabilities_report.has_manual_controls = False
         else:
-            self.capabilities_report.has_motor_controls = True
+            self.capabilities_report.has_manual_controls = True
             rospy.Subscriber("~rbx/set_motor_control", RBXMotorControl, self.setMotorControlCb)
 
 
@@ -799,7 +769,7 @@ class ROSRBXRobotIF:
   
         self.getHomeFunction = getHomeFunction
         self.setHomeFunction  = setHomeFunction
-        if self.setHomeFunction is None and self.has_fake_gps is None:
+        if self.setHomeFunction is None :
             self.capabilities_report.has_set_home = False
         else:
             self.capabilities_report.has_set_home = True
@@ -917,10 +887,11 @@ class ROSRBXRobotIF:
 
         ## Initiation Complete
         rospy.loginfo("RBX_IF: RBX IF Initialization Complete")
+        self.rbx_info.connected = True
+        self.rbx_status.ready = True 
         self.publishInfo()
         self.publishStatus()
-        self.rbx_info.connected = True
-        self.rbx_status.ready = True          
+         
 
 
 
@@ -943,9 +914,9 @@ class ROSRBXRobotIF:
         self.rbx_info.mode = self.getModeIndFunction()
         if self.getHomeFunction is not None:
           home_geo = self.getHomeFunction()
-          home_location = [home_geo.latitude,home_geo.longitude,home_geo.altitude]
-        else: 
-          home_location = self.home_location        
+          home_location = [home_geo.latitude,home_geo.longitude,home_geo.altitude]   
+        else: # No Home Information
+          home_location = [-999,-999,-999]    
         self.rbx_info.home_lat = home_location[0]
         self.rbx_info.home_long = home_location[1]
         self.rbx_info.home_alt = home_location[2]
@@ -954,12 +925,14 @@ class ROSRBXRobotIF:
 
        ## Update image source topic and subscriber if changed from last time.
         image_source = rospy.get_param('~rbx/image_source', self.rbx_info.image_source)
-        if self.rbx_info.image_source != image_source:
+        if image_source != self.rbx_info.image_source:
           rospy.loginfo("RBX_IF: Looking for new image source: " + image_source)
           #  If currently set, first unregister current image topic
-          if image_source != "None": 
+          if image_source != "None" and self.rbx_image_sub != None: 
             try:
               self.rbx_image_sub.unregister()
+              self.cv2_img = self.rbx_image_blank # Set to blank image if source topic is cleared.
+              self.rbx_image_sub = None
               rospy.loginfo("RBX_IF: Unsubscribed from image source: " + self.rbx_info.image_source)
               time.sleep(1)
             except Exception as e:
@@ -968,18 +941,18 @@ class ROSRBXRobotIF:
           #rospy.loginfo("RBX_IF: Looking for topic: " + self.rbx_info.image_source)
           if image_source != "None":  # If image topic exists subscribe
             image_topic = nepi_ros.find_topic(image_source)
-            rospy.loginfo("RBX_IF: Found image topic: " + image_topic)
             if image_topic != "":
+              rospy.loginfo("RBX_IF: Found image topic: " + image_topic)
               self.rbx_image_sub = rospy.Subscriber(image_topic, Image, self.imageSubscriberCb, queue_size = 1)
               self.rbx_image_source_last = self.rbx_info.image_source
               self.rbx_info.image_source = image_topic
               rospy.loginfo("RBX_IF: Subscribed to new image topic: " + image_topic)
             else:
-              self.update_error_msg("RBX_IF: Unable to find image topic " + image_topic + ", setting to None")
+              #self.update_error_msg("RBX_IF: Unable to find image topic " + image_topic + ", setting to None")
               self.rbx_info.image_source = "None"
               self.cv2_img = self.rbx_image_blank # Set to blank image if source topic is cleared.
           else:
-              self.update_error_msg("RBX_IF: Image Source Set to: " + image_topic)
+              #self.update_error_msg("RBX_IF: Image Source Set to: " + image_topic)
               self.rbx_info.image_source = "None"
               self.cv2_img = self.rbx_image_blank # Set to blank image if source topic is cleared.
           
@@ -1013,9 +986,9 @@ class ROSRBXRobotIF:
 
         ## Update Control Info
         if self.manualControlsReadyFunction is not None:
-          self.rbx_status.manual_motor_control_mode_ready = self.manualControlsReadyFunction()
+          self.rbx_status.manual_control_mode_ready = self.manualControlsReadyFunction()
         else:
-          self.rbx_status.manual_motor_control_mode_ready = False
+          self.rbx_status.manual_control_mode_ready = False
 
         if self.getMotorControlRatios is not None:
             motor_controls_msg = self.get_motor_controls_status_msg(self.getMotorControlRatios())
@@ -1143,6 +1116,7 @@ class ROSRBXRobotIF:
       # Use value -999 to use current value
       cmd_success = True
       timeout_sec = self.rbx_info.cmd_timeout
+      self.update_prev_errors()
       self.update_current_errors( [0,0,0,0,0,0,0] )
       rospy.loginfo("")
       rospy.loginfo("RBX_IF: ************************")
@@ -1180,12 +1154,14 @@ class ROSRBXRobotIF:
       ##############################################
       ## Send Setpoint Message and Check for Success
       ##############################################
-      rospy.loginfo("RBX_IF: Sending Setpoint Attitude Command at 50 Hz and")
+      rospy.loginfo("RBX_IF: Sending Setpoint Attitude Command")
+      self.gotoPoseFunction(new_attitude_enu_degs)
       rospy.loginfo("RBX_IF: Waiting for Attitude Setpoint to complete")
       setpoint_attitude_reached = False
       stabilize_timer=0
       timeout_timer = 0 # Initialize timeout timer
       attitude_errors = [] # Initialize running list of errors
+      time2sleep = 0.1
       while setpoint_attitude_reached is False and not rospy.is_shutdown():  # Wait for setpoint goal to be set
         if self.checkStopFunction() is True:
             rospy.loginfo("RBX_IF: Setpoint Attitude received Stop Command")
@@ -1194,11 +1170,9 @@ class ROSRBXRobotIF:
           self.update_error_msg("Setpoint cmd timed out")
           cmd_success = False
           break
-        time2sleep = 0.02
         time.sleep(time2sleep) # update setpoint position at 50 Hz
         stabilize_timer=stabilize_timer+time2sleep # Increment rospy.loginfo message timer
         timeout_timer = timeout_timer+time2sleep
-        self.gotoPoseFunction(new_attitude_enu_degs)
         # Calculate setpoint attitude errors
         cur_attitude_ned_degs = [self.current_orientation_ned_degs[0],self.current_orientation_ned_degs[1],self.current_orientation_ned_degs[2]]
         attitude_errors_degs = np.array(new_attitude_ned_degs) - np.array(cur_attitude_ned_degs)
@@ -1223,8 +1197,6 @@ class ROSRBXRobotIF:
       if cmd_success:
         rospy.loginfo("RBX_IF: ************************")
         rospy.loginfo("RBX_IF: Setpoint Reached")
-      self.update_current_errors( [0,0,0,0,0,0,0] )
-      self.update_prev_errors( [0,0,0,0,attitude_errors_degs[0],attitude_errors_degs[1],attitude_errors_degs[2]] )
       return cmd_success
       
 
@@ -1245,6 +1217,7 @@ class ROSRBXRobotIF:
       # use value 0 for no change
       cmd_success = True
       timeout_sec = self.rbx_info.cmd_timeout
+      self.update_prev_errors()
       self.update_current_errors( [0,0,0,0,0,0,0] )
       rospy.loginfo('')
       rospy.loginfo("RBX_IF: ************************")
@@ -1326,7 +1299,8 @@ class ROSRBXRobotIF:
       ##############################################
       ## Send Message and Check for Setpoint Success
       ##############################################
-      rospy.loginfo("RBX_IF: Sending Setpoint Position Local Command at 50 Hz and")
+      rospy.loginfo("RBX_IF: Sending Setpoint Position Local Command")
+      self.gotoPositionFunction(new_point_enu_m,new_orientation_enu_deg)
       rospy.loginfo("RBX_IF: Waiting for Attitude Setpoint to complete")
       setpoint_position_local_point_reached = False
       setpoint_position_local_yaw_reached = False
@@ -1334,6 +1308,7 @@ class ROSRBXRobotIF:
       point_errors = [] # Initialize running list of errors
       yaw_errors = [] # Initialize running list of errors
       timeout_timer = 0 # Initialize timeout timer
+      time2sleep = 0.1
       while setpoint_position_local_point_reached is False or setpoint_position_local_yaw_reached is False and not rospy.is_shutdown():  # Wait for setpoint goal to be set
         if self.checkStopFunction() is True:
             rospy.loginfo("RBX_IF: Setpoint Position received Stop Command")
@@ -1342,11 +1317,9 @@ class ROSRBXRobotIF:
           self.update_error_msg("Setpoint cmd timed out")
           cmd_success = False
           break
-        time2sleep = 0.02
         time.sleep(time2sleep) # update setpoint position at 50 Hz
         stabilize_timer=stabilize_timer+time2sleep # Increment rospy.loginfo message timer
         timeout_timer = timeout_timer+time2sleep
-        self.gotoPositionFunction(new_point_enu_m,new_orientation_enu_deg)
         # Calculate setpoint position ned errors    
         point_ned_error_m = np.array(self.current_position_ned_m) - np.array(new_point_ned_m)
         for ind in range(3):
@@ -1388,8 +1361,6 @@ class ROSRBXRobotIF:
       if cmd_success:
         rospy.loginfo("RBX_IF: Setpoint Reached")
         rospy.loginfo("RBX_IF: ************************")
-      self.update_current_errors( [0,0,0,0,0,0,0] )
-      self.update_prev_errors(  [point_ned_error_m[0],point_ned_error_m[1],point_ned_error_m[2],0,0,0,max_yaw_ned_error_deg] )
       return cmd_success
 
 
@@ -1406,6 +1377,7 @@ class ROSRBXRobotIF:
       # Use value -999 to use current value
       cmd_success = True
       timeout_sec = self.rbx_info.cmd_timeout
+      self.update_prev_errors()
       self.update_current_errors( [0,0,0,0,0,0,0] )
       rospy.loginfo('')
       rospy.loginfo("RBX_IF: ************************")
@@ -1474,8 +1446,8 @@ class ROSRBXRobotIF:
       ##############################################
       ## Send Message and Check for Setpoint Success
       ##############################################
-  
-      rospy.loginfo("RBX_IF: Sending MAVLINK Setpoint Position Local Command at 50 Hz and")
+      rospy.loginfo("RBX_IF: Sending MAVLINK Setpoint Position Local Command")
+      self.gotoLocationFunction(new_geopoint_amsl,new_orientation_ned_deg)
       rospy.loginfo("RBX_IF:  checking for Setpoint Reached")
       setpoint_location_global_geopoint_reached = False
       setpoint_location_global_yaw_reached = False 
@@ -1484,6 +1456,7 @@ class ROSRBXRobotIF:
       geopoint_errors = [] # Initialize running list of errors
       yaw_errors = [] # Initialize running list of errors
       timeout_timer = 0 # Initialize timeout timer
+      time2sleep = 0.1
       while (setpoint_location_global_geopoint_reached is False or setpoint_location_global_yaw_reached is False) and not rospy.is_shutdown(): # Wait for setpoint goal to be set
         if self.checkStopFunction() is True:
           rospy.loginfo("RBX_IF: Setpoint Location received Stop Command")
@@ -1492,12 +1465,9 @@ class ROSRBXRobotIF:
           self.update_error_msg("Setpoint cmd timed out")
           cmd_success = False
           break
-        time2sleep = 0.02
         time.sleep(time2sleep) # update setpoint position at 50 Hz
         stabilize_timer=stabilize_timer+time2sleep # Increment self.update_error_msg message timer
-        timeout_timer = timeout_timer+time2sleep
-        self.gotoLocationFunction(new_geopoint_amsl,new_orientation_ned_deg)
-        
+        timeout_timer = timeout_timer+time2sleep        
         # Calculate setpoint position and yaw errors
         geopoint_errors_geo = np.array(self.current_location_wgs84_geo) - np.array(new_geopoint_wgs84)
         geopoint_errors_m = [geopoint_errors_geo[0]*111139,geopoint_errors_geo[1]*111139,geopoint_errors_geo[2]]
@@ -1541,8 +1511,6 @@ class ROSRBXRobotIF:
       if cmd_success:
         rospy.loginfo("RBX_IF: Setpoint Reached")
         rospy.loginfo("RBX_IF: ************************")
-      self.update_current_errors( [0,0,0,0,0,0,0] )
-      self.update_prev_errors( [geopoint_errors_m[0],geopoint_errors_m[1],geopoint_errors_m[2],0,0,0,max_yaw_ned_error_deg] )
       return cmd_success
 
     #######################
@@ -1565,20 +1533,17 @@ class ROSRBXRobotIF:
         rospy.loginfo("RBX_IF: Skipping current error update. Error list to short")
 
     ### Function for updating last goto error values
-    def update_prev_errors(self,error_list):
-      if len(error_list) == 7:
+    def update_prev_errors(self):
         errors_msg = RBXGotoErrors()
-        errors_msg.x_m = error_list[0]
-        errors_msg.y_m = error_list[1]
-        errors_msg.z_m = error_list[2]
-        errors_msg.heading_deg = error_list[3]
-        errors_msg.roll_deg = error_list[4]
-        errors_msg.pitch_deg = error_list[5]
-        errors_msg.yaw_deg = error_list[6]
-
+        errors_msg.x_m = self.rbx_status.errors_current.x_m
+        errors_msg.y_m = self.rbx_status.errors_current.y_m
+        errors_msg.z_m = self.rbx_status.errors_current.z_m
+        errors_msg.heading_deg = self.rbx_status.errors_current.heading_deg
+        errors_msg.roll_deg = self.rbx_status.errors_current.roll_deg
+        errors_msg.pitch_deg = self.rbx_status.errors_current.pitch_deg
+        errors_msg.yaw_deg = self.rbx_status.errors_current.yaw_deg
         self.rbx_status.errors_prev = errors_msg
-      else:
-        rospy.loginfo("RBX_IF: Skipping current error update. Error list to short")
+
 
     def update_error_msg(self,error_msg):
       rospy.loginfo(error_msg)

@@ -144,7 +144,7 @@ catkin_package(
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
 install(PROGRAMS
-    scripts/ardupilot_rbx_fake_gps.py
+    scripts/rbx_fake_gps.py
     scripts/ardupilot_rbx_node.py
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
