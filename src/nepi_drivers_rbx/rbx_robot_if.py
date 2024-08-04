@@ -75,7 +75,8 @@ class ROSRBXRobotIF:
 
     states = []
     modes = []
-    actions = []
+    setup_actions = []
+    go_actions = []
     data_products = ['image']
 
     settings_if = None
@@ -240,6 +241,41 @@ class ROSRBXRobotIF:
             self.last_cmd_string = "nepi_rbx.set_rbx_mode(self,'" + str_val + "',timeout_sec = " + str(self.rbx_info.cmd_timeout)
         self.publishInfo()
 
+    ### Callback to execute action
+    def setupActionCb(self,action_msg):
+        rospy.loginfo("RBX_IF: Received setup action message")
+        rospy.loginfo(action_msg)
+        action_ind = action_msg.data
+        if self.setSetupActionIndFunction is not None:
+            if action_ind < 0 or action_ind > (len(self.setup_actions)-1):
+                self.update_error_msg("No matching rbx action found")
+            else:
+                if self.rbx_status.ready is False:
+                    self.update_error_msg("Another Command Process is Active")
+                    self.update_error_msg("Ignoring this Request")
+                else:
+                    self.rbx_status.process_current = self.setup_actions[action_ind]
+                    self.rbx_status.ready = False
+                    self.rbx_cmd_success_current = False
+                    rospy.loginfo("RBX_IF: Starting action: " + self.setup_actions[action_ind])
+                    success = self.setSetupActionIndFunction(action_ind)
+                    self.rbx_cmd_success_current = success
+                    if success:
+                      rospy.loginfo("RBX_IF: Finished action: " + self.setup_actions[action_ind])
+                    else:
+                      rospy.loginfo("RBX_IF: Action: " + self.setup_actions[action_ind] + " Failed to complete")
+                    self.rbx_status.process_last = self.setup_actions[action_ind]
+                    self.rbx_status.process_current = "None"
+                    self.rbx_status.cmd_success = self.rbx_cmd_success_current
+                    time.sleep(0.5)
+                    self.rbx_status.ready = True
+
+                    str_val = self.setup_actions[action_ind]
+                    self.last_cmd_string = "nepi_rbx.setup_rbx_action(self,'" + str_val + "',timeout_sec = " + str(self.rbx_info.cmd_timeout)
+                    self.publishInfo()
+        else:
+            self.update_error_msg("Ignoring Setup Action command, no Set Action Function")
+
 
     ### Callback to start rbx set goto goals process
     def setErrorBoundsCb(self,error_bounds_msg):
@@ -382,31 +418,31 @@ class ROSRBXRobotIF:
         rospy.loginfo("RBX_IF: Received go action message")
         rospy.loginfo(action_msg)
         action_ind = action_msg.data
-        if self.setActionIndFunction is not None:
-            if action_ind < 0 or action_ind > (len(self.actions)-1):
+        if self.setGoActionIndFunction is not None:
+            if action_ind < 0 or action_ind > (len(self.go_actions)-1):
                 self.update_error_msg("No matching rbx action found")
             else:
                 if self.rbx_status.ready is False:
                     self.update_error_msg("Another GoTo Command Process is Active")
                     self.update_error_msg("Ignoring this Request")
                 else:
-                    self.rbx_status.process_current = self.actions[action_ind]
+                    self.rbx_status.process_current = self.go_actions[action_ind]
                     self.rbx_status.ready = False
                     self.rbx_cmd_success_current = False
-                    rospy.loginfo("RBX_IF: Starting action: " + self.actions[action_ind])
-                    success = self.setActionIndFunction(action_ind)
+                    rospy.loginfo("RBX_IF: Starting action: " + self.go_actions[action_ind])
+                    success = self.setGoActionIndFunction(action_ind)
                     self.rbx_cmd_success_current = success
                     if success:
-                      rospy.loginfo("RBX_IF: Finished action: " + self.actions[action_ind])
+                      rospy.loginfo("RBX_IF: Finished action: " + self.go_actions[action_ind])
                     else:
-                      rospy.loginfo("RBX_IF: Action: " + self.actions[action_ind] + " Failed to complete")
-                    self.rbx_status.process_last = self.actions[action_ind]
+                      rospy.loginfo("RBX_IF: Action: " + self.go_actions[action_ind] + " Failed to complete")
+                    self.rbx_status.process_last = self.go_actions[action_ind]
                     self.rbx_status.process_current = "None"
                     self.rbx_status.cmd_success = self.rbx_cmd_success_current
                     time.sleep(0.5)
                     self.rbx_status.ready = True
 
-                    str_val = self.actions[action_ind]
+                    str_val = self.go_actions[action_ind]
                     self.last_cmd_string = "nepi_rbx.go_rbx_action(self,'" + str_val + "',timeout_sec = " + str(self.rbx_info.cmd_timeout)
                     self.publishInfo()
         else:
@@ -564,7 +600,8 @@ class ROSRBXRobotIF:
                  states,getStateIndFunction,setStateIndFunction,
                  modes,getModeIndFunction,setModeIndFunction,
                  checkStopFunction,
-                 actions, setActionIndFunction,
+                 setup_actions, setSetupActionIndFunction,
+                 go_actions, setGoActionIndFunction,
                  getHomeFunction=None,setHomeFunction=None,
                  manualControlsReadyFunction=None,
                  getMotorControlRatios=None,
@@ -618,7 +655,8 @@ class ROSRBXRobotIF:
         
         self.capabilities_report.state_options = str(states)
         self.capabilities_report.mode_options = str(modes)
-        self.capabilities_report.action_options = str(actions)
+        self.capabilities_report.setup_action_options = str(setup_actions)
+        self.capabilities_report.go_action_options = str(go_actions)
         self.capabilities_report.data_products = str(self.data_products)
         
         # Initialize Home location value
@@ -720,6 +758,10 @@ class ROSRBXRobotIF:
         rospy.Subscriber("~rbx/set_state", UInt8, self.setStateCb)
         rospy.Subscriber("~rbx/set_mode", UInt8, self.setModeCb)
 
+        self.setup_actions = setup_actions
+        self.setSetupActionIndFunction = setSetupActionIndFunction
+        rospy.Subscriber("~rbx/setup_action", UInt8, self.setupActionCb) 
+
         # Set Up Manual Motor Controls
         self.manualControlsReadyFunction = manualControlsReadyFunction
         if self.manualControlsReadyFunction is not None:
@@ -763,8 +805,8 @@ class ROSRBXRobotIF:
         rospy.set_param('~rbx/cmd_timeout', self.init_cmd_timeout)
         rospy.Subscriber("~rbx/set_goto_timeout", UInt32, self.setCmdTimeoutCb)
 
-        self.actions = actions
-        self.setActionIndFunction = setActionIndFunction
+        self.go_actions = go_actions
+        self.setGoActionIndFunction = setGoActionIndFunction
         rospy.Subscriber("~rbx/go_action", UInt8, self.goActionCb) 
   
         self.getHomeFunction = getHomeFunction

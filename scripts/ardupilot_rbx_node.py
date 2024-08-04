@@ -63,11 +63,13 @@ class ArdupilotRBX:
 
   RBX_STATES = ["DISARM","ARM"]
   RBX_MODES = ["STABILIZE","LAND","RTL","LOITER","GUIDED","RESUME"]
-  RBX_ACTIONS = ["TAKEOFF","LAUNCH"]
+  RBX_SETUP_ACTIONS = ["TAKEOFF","LAUNCH"]
+  RBX_GO_ACTIONS = []
 
   RBX_STATE_FUNCTIONS = ["disarm","arm"]
   RBX_MODE_FUNCTIONS = ["stabilize","land","rtl","loiter","guided","resume"]
-  RBX_ACTION_FUNCTIONS = ["takeoff","launch"]
+  RBX_SETUP_ACTION_FUNCTIONS = ["takeoff","launch"]  
+  RBX_GO_ACTION_FUNCTIONS = []
 
   # Create shared class variables and thread locks 
   
@@ -261,8 +263,10 @@ class ArdupilotRBX:
                                   getModeIndFunction = self.getModeInd,
                                   setModeIndFunction = self.setModeInd,
                                   checkStopFunction = self.checkStopFunction,
-                                  actions = self.RBX_ACTIONS, 
-                                  setActionIndFunction = self.setActionInd,
+                                  setup_actions = self.RBX_SETUP_ACTIONS, 
+                                  setSetupActionIndFunction = self.setSetupActionInd,
+                                  go_actions = self.RBX_GO_ACTIONS, 
+                                  setGoActionIndFunction = self.setGoActionInd,
                                   manualControlsReadyFunction = None, #self.manualControlsReady,
                                   getMotorControlRatios=None,
                                   setMotorControlRatio=None,
@@ -412,8 +416,13 @@ class ArdupilotRBX:
   def getMotorControlRatios(self):
     return []
 
-  def setActionInd(self,action_ind):
-    set_action_function = globals()[self.RBX_ACTION_FUNCTIONS[action_ind]]
+  def setSetupActionInd(self,action_ind):
+    set_action_function = globals()[self.RBX_SETUP_ACTION_FUNCTIONS[action_ind]]
+    success = set_action_function(self)
+    return success
+
+  def setGoActionInd(self,action_ind):
+    set_action_function = globals()[self.RBX_GO_ACTION_FUNCTIONS[action_ind]]
     success = set_action_function(self)
     return success
 
