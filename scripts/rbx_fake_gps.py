@@ -173,7 +173,7 @@ class RBXFakeGPS:
     rospy.loginfo("RBX_FAKE_GPS: Initialization Complete")
 
     #Set up node shutdown
-    rospy.on_shutdown(self.cleanup_actions)
+    #rospy.on_shutdown(self.cleanup_actions)
     # Spin forever (until object is detected)
     rospy.spin()
 
@@ -190,6 +190,7 @@ class RBXFakeGPS:
     if self.fake_gps_enabled:
       # Publish a fake gps message
       navsatfix = NavSatFix()
+      navsatfix.header.stamp = rospy.Time.now()
       navsatfix.latitude = self.current_location_wgs84_geo.latitude
       navsatfix.longitude = self.current_location_wgs84_geo.longitude
       navsatfix.altitude = self.current_location_wgs84_geo.altitude

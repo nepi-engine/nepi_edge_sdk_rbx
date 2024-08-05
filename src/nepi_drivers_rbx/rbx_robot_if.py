@@ -27,7 +27,7 @@ from nepi_edge_sdk_base import nepi_nav
 
 
 
-from std_msgs.msg import Empty, Int8, UInt8, UInt32, Bool, String, Float32, Float64
+from std_msgs.msg import Empty, Int8, UInt8, UInt32, Int32, Bool, String, Float32, Float64
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Image, NavSatFix, BatteryState
 from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3, PoseStamped
@@ -209,8 +209,9 @@ class ROSRBXRobotIF:
             self.rbx_status.process_current = self.states[new_state_ind]
             self.rbx_state_last = self.rbx_info.state
             rospy.loginfo("RBX_IF: Waiting for rbx state " + self.states[new_state_ind] + " to set")
-            rospy.loginfo("RBX_IF: Current rbx state is " + self.states[self.rbx_info.state])
             self.setStateIndFunction(new_state_ind)
+            time.sleep(1)
+            rospy.loginfo("RBX_IF: Current rbx state is " + self.states[self.getStateIndFunction()])
             self.rbx_status.process_last = self.states[new_state_ind]
             self.rbx_status.process_current = "None"
             str_val = self.states[new_state_ind]
@@ -233,8 +234,8 @@ class ROSRBXRobotIF:
             self.update_current_errors( [0,0,0,0,0,0,0] )
             self.rbx_status.process_current = self.modes[new_mode_ind]
             rospy.loginfo("RBX_IF: Setting rbx mode to : " + self.modes[new_mode_ind])
-            rospy.loginfo("RBX_IF: Calling rbx mode function: " + self.modes[new_mode_ind])
             self.setModeIndFunction(new_mode_ind)
+            rospy.loginfo("RBX_IF: Current rbx mode is " + self.modes[self.getModeIndFunction()])
             self.rbx_status.process_last = self.modes[new_mode_ind]
             self.rbx_status.process_current = "None"
             str_val = self.modes[new_mode_ind]
@@ -755,12 +756,12 @@ class ROSRBXRobotIF:
 
 
         ### Start RBX Config Subscribe Topics
-        rospy.Subscriber("~rbx/set_state", UInt8, self.setStateCb)
-        rospy.Subscriber("~rbx/set_mode", UInt8, self.setModeCb)
+        rospy.Subscriber("~rbx/set_state", Int32, self.setStateCb)
+        rospy.Subscriber("~rbx/set_mode", Int32, self.setModeCb)
 
         self.setup_actions = setup_actions
         self.setSetupActionIndFunction = setSetupActionIndFunction
-        rospy.Subscriber("~rbx/setup_action", UInt8, self.setupActionCb) 
+        rospy.Subscriber("~rbx/setup_action", Int32, self.setupActionCb) 
 
         # Set Up Manual Motor Controls
         self.manualControlsReadyFunction = manualControlsReadyFunction
@@ -807,7 +808,7 @@ class ROSRBXRobotIF:
 
         self.go_actions = go_actions
         self.setGoActionIndFunction = setGoActionIndFunction
-        rospy.Subscriber("~rbx/go_action", UInt8, self.goActionCb) 
+        rospy.Subscriber("~rbx/go_action", Int32, self.goActionCb) 
   
         self.getHomeFunction = getHomeFunction
         self.setHomeFunction  = setHomeFunction
@@ -1240,6 +1241,7 @@ class ROSRBXRobotIF:
       if cmd_success:
         rospy.loginfo("RBX_IF: ************************")
         rospy.loginfo("RBX_IF: Setpoint Reached")
+      self.update_current_errors( [0,0,0,0,attitude_errors_degs[0],attitude_errors_degs[1],attitude_errors_degs[2]]  )
       return cmd_success
       
 
@@ -1273,16 +1275,16 @@ class ROSRBXRobotIF:
       #rospy.loginfo("RBX_IF:  Lat, Long, Alt")
       #rospy.loginfo(["%.2f" % start_geopoint_wgs84[0],"%.2f" % start_geopoint_wgs84[1],"%.2f" % start_geopoint_wgs84[2]])
       start_position_ned_m = list(self.current_position_ned_m)
-      #rospy.loginfo("RBX_IF: Start Position NED degs")
-      #rospy.loginfo("RBX_IF:  X, Y, Z")
-      #rospy.loginfo(["%.2f" % start_position_ned_m[0],"%.2f" % start_position_ned_m[1],"%.2f" % start_position_ned_m[2]])   
+      rospy.loginfo("RBX_IF: Start Position NED degs")
+      rospy.loginfo("RBX_IF:  X, Y, Z")
+      rospy.loginfo(["%.2f" % start_position_ned_m[0],"%.2f" % start_position_ned_m[1],"%.2f" % start_position_ned_m[2]])   
       start_orientation_ned_degs=list(self.current_orientation_ned_degs)
-      #rospy.loginfo("RBX_IF: Start Orientation NED degs")
-      #rospy.loginfo("RBX_IF:  Roll, Pitch, Yaw")
-      #rospy.loginfo(["%.2f" % start_orientation_ned_degs[0],"%.2f" % start_orientation_ned_degs[1],"%.2f" % start_orientation_ned_degs[2]])
+      rospy.loginfo("RBX_IF: Start Orientation NED degs")
+      rospy.loginfo("RBX_IF:  Roll, Pitch, Yaw")
+      rospy.loginfo(["%.2f" % start_orientation_ned_degs[0],"%.2f" % start_orientation_ned_degs[1],"%.2f" % start_orientation_ned_degs[2]])
       start_yaw_ned_deg = start_orientation_ned_degs[2]
-      #rospy.loginfo("RBX_IF: Start Yaw NED degs")
-      #rospy.loginfo(start_yaw_ned_deg) 
+      rospy.loginfo("RBX_IF: Start Yaw NED degs")
+      rospy.loginfo(start_yaw_ned_deg) 
       start_heading_deg=self.current_heading_deg
       #rospy.loginfo("RBX_IF: Start Heading degs")
       #rospy.loginfo(start_heading_deg)   
@@ -1344,7 +1346,7 @@ class ROSRBXRobotIF:
       ##############################################
       rospy.loginfo("RBX_IF: Sending Setpoint Position Local Command")
       self.gotoPositionFunction(new_point_enu_m,new_orientation_enu_deg)
-      rospy.loginfo("RBX_IF: Waiting for Attitude Setpoint to complete")
+      rospy.loginfo("RBX_IF: Waiting for Position Setpoint to complete")
       setpoint_position_local_point_reached = False
       setpoint_position_local_yaw_reached = False
       stabilize_timer=0
@@ -1404,6 +1406,7 @@ class ROSRBXRobotIF:
       if cmd_success:
         rospy.loginfo("RBX_IF: Setpoint Reached")
         rospy.loginfo("RBX_IF: ************************")
+      self.update_current_errors(  [point_ned_error_m[0],point_ned_error_m[1],point_ned_error_m[2],0,0,0,max_yaw_ned_error_deg] )
       return cmd_success
 
 
@@ -1554,6 +1557,7 @@ class ROSRBXRobotIF:
       if cmd_success:
         rospy.loginfo("RBX_IF: Setpoint Reached")
         rospy.loginfo("RBX_IF: ************************")
+      self.update_current_errors( [geopoint_errors_m[0],geopoint_errors_m[1],geopoint_errors_m[2],0,0,0,max_yaw_ned_error_deg] )
       return cmd_success
 
     #######################

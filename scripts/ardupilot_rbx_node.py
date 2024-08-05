@@ -677,6 +677,7 @@ class ArdupilotRBX:
       if "arm" in self.RBX_STATE_FUNCTIONS:
         cmd_success = self.setStateInd(self.RBX_STATE_FUNCTIONS.index("arm"))
     if cmd_success:
+      nepi_ros.sleep(2,20)
       cmd_success = self.takeoff_action()
     return cmd_success
 
@@ -689,68 +690,72 @@ class ArdupilotRBX:
     self.rbx_if.update_prev_errors()
     self.rbx_if.update_current_errors( [0,0,0,0,0,0,0] )
     cmd_success = False
-    takeoff_height_m = float(self.settings_dict['takeoff_height_m'])
-    takeoff_min_pitch_deg = float(self.settings_dict['takeoff_min_pitch_deg'])
-    self.publishMsg("Sending Takeoff Command to altitude to " + str(takeoff_height_m) + " meters")
-    self.takeoff_client(min_pitch=takeoff_min_pitch_deg,altitude=takeoff_height_m)
-    geo_point = GeoPoint()
-    geo_point.latitude = self.rbx_if.current_location_wgs84_geo[0]
-    geo_point.longitude = self.rbx_if.current_location_wgs84_geo[1]
-    goal_alt = self.rbx_if.current_location_wgs84_geo[2] + takeoff_height_m
-    geo_point.altitude = goal_alt
-    self.fake_gps_goto_location_pub.publish(geo_point)
+    if self.state_current == "ARM":
+      takeoff_height_m = float(self.settings_dict['takeoff_height_m'])
+      takeoff_min_pitch_deg = float(self.settings_dict['takeoff_min_pitch_deg'])
+      self.publishMsg("Sending Takeoff Command to altitude to " + str(takeoff_height_m) + " meters")
+      self.takeoff_client(min_pitch=takeoff_min_pitch_deg,altitude=takeoff_height_m)
+      geo_point = GeoPoint()
+      geo_point.latitude = self.rbx_if.current_location_wgs84_geo[0]
+      geo_point.longitude = self.rbx_if.current_location_wgs84_geo[1]
+      goal_alt = self.rbx_if.current_location_wgs84_geo[2] + takeoff_height_m
+      geo_point.altitude = goal_alt
+      self.fake_gps_goto_location_pub.publish(geo_point)
 
-    error_bound_m = self.rbx_if.rbx_info.error_bounds.max_distance_error_m
-    timeout_sec = self.rbx_if.rbx_info.cmd_timeout
-    check_interval_s = float(timeout_sec) / 100
-    check_timer = 0
-    alt_error = (goal_alt - self.rbx_if.current_location_wgs84_geo[2])
-    while (abs(alt_error) > error_bound_m and check_timer < timeout_sec):
-      self.rbx_if.update_current_errors( [0,0,alt_error,0,0,0,0] )
+      error_bound_m = self.rbx_if.rbx_info.error_bounds.max_distance_error_m
+      timeout_sec = self.rbx_if.rbx_info.cmd_timeout
+      check_interval_s = float(timeout_sec) / 100
+      check_timer = 0
       alt_error = (goal_alt - self.rbx_if.current_location_wgs84_geo[2])
-      time.sleep(check_interval_s)
-      check_timer += check_interval_s
-    if (check_timer < timeout_sec):
-      cmd_success = True
-      self.takeoff_complete = True
-      self.publishMsg("Takeoff action completed with error: " + str(alt_error) + " meters")
-    else:
-      self.takeoff_complete = False
-      self.publishMsg("Takeoff action timed-out with error: " + str(alt_error) + " meters")
+      while (abs(alt_error) > error_bound_m and check_timer < timeout_sec):
+        self.rbx_if.update_current_errors( [0,0,alt_error,0,0,0,0] )
+        alt_error = (goal_alt - self.rbx_if.current_location_wgs84_geo[2])
+        time.sleep(check_interval_s)
+        check_timer += check_interval_s
+      if (check_timer < timeout_sec):
+        cmd_success = True
+        self.takeoff_complete = True
+        self.publishMsg("Takeoff action completed with error: " + str(alt_error) + " meters")
+      else:
+        self.takeoff_complete = False
+        self.publishMsg("Takeoff action timed-out with error: " + str(alt_error) + " meters")
     return cmd_success
 
   ### Function for switching to STABILIZE mode
   global stabilize
   def stabilize(self):
-    self.set_mavlink_mode('STABILIZE')
-    self.fake_gps_go_stop_pub.publish(Empty())
-    cmd_success = True
+    cmd_success = False
+    if self.state_current == "ARM":
+      self.set_mavlink_mode('STABILIZE')
+      self.fake_gps_go_stop_pub.publish(Empty())
+      cmd_success = True
     return cmd_success
       
   ### Function for switching to LAND mode
   global land
   def land(self):
     cmd_success = False
-    self.set_mavlink_mode('LAND')
-    geo_point = GeoPoint()
-    geo_point.latitude = self.rbx_if.current_location_wgs84_geo[0]
-    geo_point.longitude = self.rbx_if.current_location_wgs84_geo[1]
-    start_alt = self.rbx_if.current_location_wgs84_geo[2]
-    goal_alt = 0
-    geo_point.altitude = goal_alt
-    self.fake_gps_goto_location_pub.publish(geo_point)
-    self.publishMsg("Waiting for land process to complete and disarm")
-    timeout_sec = self.rbx_if.rbx_info.cmd_timeout
-    check_interval_s = float(timeout_sec) / 100
-    check_timer = 0
-    while (self.state_current == "ARMED" and check_timer < timeout_sec):
-      time.sleep(check_interval_s)
-      check_timer += check_interval_s
-    if self.state_current == "ARMED":
-      self.publishMsg("Land process complete")
-      cmd_success = True
-    else:
-      self.publishMsg("Land process timed-out")
+    if self.state_current == "ARM":
+      self.set_mavlink_mode('LAND')
+      geo_point = GeoPoint()
+      geo_point.latitude = self.rbx_if.current_location_wgs84_geo[0]
+      geo_point.longitude = self.rbx_if.current_location_wgs84_geo[1]
+      start_alt = self.rbx_if.current_location_wgs84_geo[2]
+      goal_alt = 0
+      geo_point.altitude = goal_alt
+      self.fake_gps_goto_location_pub.publish(geo_point)
+      self.publishMsg("Waiting for land process to complete and disarm")
+      timeout_sec = self.rbx_if.rbx_info.cmd_timeout
+      check_interval_s = float(timeout_sec) / 100
+      check_timer = 0
+      while (self.state_current == "ARMED" and check_timer < timeout_sec):
+        time.sleep(check_interval_s)
+        check_timer += check_interval_s
+      if self.state_current == "ARMED":
+        self.publishMsg("Land process complete")
+        cmd_success = True
+      else:
+        self.publishMsg("Land process timed-out")
     return cmd_success
 
 
@@ -758,53 +763,60 @@ class ArdupilotRBX:
   global rtl
   def rtl(self):
     cmd_success = False
-    self.set_mavlink_mode('RTL')
-    self.fake_gps_goto_location_pub.publish(self.home_location)
-    error_goal_m = self.rbx_if.rbx_info.error_bounds.max_distance_error_m
-    last_loc = self.rbx_if.current_location_wgs84_geo
-    timeout_sec = self.rbx_if.rbx_info.cmd_timeout
-    check_interval_s = self.rbx_if.rbx_info.error_bounds.min_stabilize_time_s
-    check_timer = 0
-    stabilized_check = False
-    while (stabilized_check is False and check_timer < timeout_sec):
-      nepi_ros.sleep(check_interval_s,100)
-      check_timer += check_interval_s
-      cur_loc = self.rbx_if.current_location_wgs84_geo
-      max_distance_error_m = max(abs(np.subtract(cur_loc,last_loc)))
-      stabilized_check = max_distance_error_m < error_goal_m
-      last_loc = cur_loc
-    if stabilized_check:
-      self.publishMsg("RTL process complete")
-      cmd_success = True
-    else:
-      self.publishMsg("RTL process timed-out")
+    if self.state_current == "ARM":
+      self.set_mavlink_mode('RTL')
+      self.fake_gps_goto_location_pub.publish(self.home_location)
+      error_goal_m = self.rbx_if.rbx_info.error_bounds.max_distance_error_m
+      last_loc = self.rbx_if.current_location_wgs84_geo
+      timeout_sec = self.rbx_if.rbx_info.cmd_timeout
+      check_interval_s = self.rbx_if.rbx_info.error_bounds.min_stabilize_time_s
+      check_timer = 0
+      stabilized_check = False
+      while (stabilized_check is False and check_timer < timeout_sec):
+        nepi_ros.sleep(check_interval_s,100)
+        check_timer += check_interval_s
+        cur_loc = self.rbx_if.current_location_wgs84_geo
+        max_distance_error_m = max(abs(np.subtract(cur_loc,last_loc)))
+        stabilized_check = max_distance_error_m < error_goal_m
+        last_loc = cur_loc
+      if stabilized_check:
+        self.publishMsg("RTL process complete")
+        cmd_success = True
+      else:
+        self.publishMsg("RTL process timed-out")
     return cmd_success
 
 
   ### Function for switching to LOITER mode
   global loiter
   def loiter(self):
-    self.set_mavlink_mode('LOITER')
-    self.fake_gps_go_stop_pub.publish(Empty())
-    cmd_success = True
+    cmd_success = False
+    if self.state_current == "ARM":
+      self.set_mavlink_mode('LOITER')
+      self.fake_gps_go_stop_pub.publish(Empty())
+      cmd_success = True
     return cmd_success
 
 
   ### Function for switching to Guided mode
   global guided
   def guided(self):
-    self.set_mavlink_mode('GUIDED')
-    self.fake_gps_go_stop_pub.publish(Empty())
-    cmd_success = True
+    cmd_success = False
+    if self.state_current == "ARM":
+      self.set_mavlink_mode('GUIDED')
+      self.fake_gps_go_stop_pub.publish(Empty())
+      cmd_success = True
     return cmd_success
 
   ### Function for switching back to current mission
   global resume
   def resume(self):
-    # Reset mode to last
-    self.publishMsg("Switching mavlink mode from " + self.RBX_MODES[self.mode_current] + " back to " + self.RBX_MODES[self.mode_last])
-    self.set_mavlink_mode(self.RBX_MODES[self.mode_last])
-    cmd_success = True
+    cmd_success = False
+    if self.state_current == "ARM":
+      # Reset mode to last
+      self.publishMsg("Switching mavlink mode from " + self.RBX_MODES[self.mode_current] + " back to " + self.RBX_MODES[self.mode_last])
+      self.set_mavlink_mode(self.RBX_MODES[self.mode_last])
+      cmd_success = True
     return cmd_success
 
 
