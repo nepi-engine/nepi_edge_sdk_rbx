@@ -898,6 +898,7 @@ class ROSRBXRobotIF:
         self.save_data_if = SaveDataIF(data_product_names = self.data_products)
         self.save_cfg_if = SaveCfgIF(updateParamsCallback=self.setCurrentAsDefault, paramsModifiedCallback=self.updateFromParamServer)
 
+        time.sleep(1)
         # Start capabilities services
         rospy.Service("~rbx/capabilities_query", RBXCapabilitiesQuery, self.capabilities_query_callback)
         rospy.Service("~rbx/navpose_capabilities_query", NavPoseCapabilitiesQuery, self.navpose_capabilities_query_callback)
