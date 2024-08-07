@@ -106,6 +106,7 @@ class ROSRBXRobotIF:
     rbx_image_blank = np.zeros((350, 700, 3), dtype = np.uint8) # Empty Black Image
     cv2_img = np.zeros((350, 700, 3), dtype = np.uint8) # Empty Black Image
     rbx_image_source_last = "None"
+    init_image_status_overlay = False
 
     def resetFactoryCb(self, msg):
         rospy.loginfo("RBX_IF: Received RBX Driver Factory Reset")
@@ -860,10 +861,7 @@ class ROSRBXRobotIF:
         # Define NavPose Namespaces
 
         # Define NavPose Services Calls
-        NAVPOSE_SERVICE_NAME = NEPI_BASE_NAMESPACE + "nav_pose_query"
-        nepi_ros.wait_for_service(NAVPOSE_SERVICE_NAME)
-        time.sleep(1)
-        self.get_navpose_service = rospy.ServiceProxy(NAVPOSE_SERVICE_NAME, NavPoseQuery)
+
         NEPI_SET_NAVPOSE_GPS_TOPIC = NEPI_BASE_NAMESPACE + "nav_pose_mgr/set_gps_fix_topic"
         NEPI_SET_NAVPOSE_HEADING_TOPIC = NEPI_BASE_NAMESPACE + "nav_pose_mgr/set_heading_topic"
         NEPI_SET_NAVPOSE_ORIENTATION_TOPIC = NEPI_BASE_NAMESPACE + "nav_pose_mgr/set_orientation_topic"
@@ -875,6 +873,11 @@ class ROSRBXRobotIF:
         set_gps_timesync_pub = rospy.Publisher(NEPI_ENABLE_NAVPOSE_GPS_CLOCK_SYNC_TOPIC, Bool, queue_size=1)
         time.sleep(1)
         # Start NavPose Data Updater
+        NAVPOSE_SERVICE_NAME = NEPI_BASE_NAMESPACE + "nav_pose_query"
+        nepi_ros.wait_for_service(NAVPOSE_SERVICE_NAME)
+        rospy.loginfo("Connecting to NEPI NavPose at: " + NAVPOSE_SERVICE_NAME)
+        time.sleep(1)
+        self.get_navpose_service = rospy.ServiceProxy(NAVPOSE_SERVICE_NAME, NavPoseQuery)
         rospy.Timer(rospy.Duration(self.update_navpose_interval_sec), self.updateNavPoseCb)
         # Connect to NEPI NavPose Solution
         # Set GPS Topic
@@ -964,43 +967,8 @@ class ROSRBXRobotIF:
         self.rbx_info.home_lat = home_location[0]
         self.rbx_info.home_long = home_location[1]
         self.rbx_info.home_alt = home_location[2]
-
         self.rbx_info.fake_gps_enabled = rospy.get_param('~rbx/fake_gps_enabled', self.init_fake_gps_enabled)
 
-       ## Update image source topic and subscriber if changed from last time.
-        image_source = rospy.get_param('~rbx/image_source', self.rbx_info.image_source)
-        if image_source != self.rbx_info.image_source:
-          rospy.loginfo("RBX_IF: Looking for new image source: " + image_source)
-          #  If currently set, first unregister current image topic
-          if image_source != "None" and self.rbx_image_sub != None: 
-            try:
-              self.rbx_image_sub.unregister()
-              self.cv2_img = self.rbx_image_blank # Set to blank image if source topic is cleared.
-              self.rbx_image_sub = None
-              rospy.loginfo("RBX_IF: Unsubscribed from image source: " + self.rbx_info.image_source)
-              time.sleep(1)
-            except Exception as e:
-              rospy.loginfo(e)
-          # Try to find and subscribe to new image source topic
-          #rospy.loginfo("RBX_IF: Looking for topic: " + self.rbx_info.image_source)
-          if image_source != "None":  # If image topic exists subscribe
-            image_topic = nepi_ros.find_topic(image_source)
-            if image_topic != "":
-              rospy.loginfo("RBX_IF: Found image topic: " + image_topic)
-              self.rbx_image_sub = rospy.Subscriber(image_topic, Image, self.imageSubscriberCb, queue_size = 1)
-              self.rbx_image_source_last = self.rbx_info.image_source
-              self.rbx_info.image_source = image_topic
-              rospy.loginfo("RBX_IF: Subscribed to new image topic: " + image_topic)
-            else:
-              #self.update_error_msg("RBX_IF: Unable to find image topic " + image_topic + ", setting to None")
-              self.rbx_info.image_source = "None"
-              self.cv2_img = self.rbx_image_blank # Set to blank image if source topic is cleared.
-          else:
-              #self.update_error_msg("RBX_IF: Image Source Set to: " + image_topic)
-              self.rbx_info.image_source = "None"
-              self.cv2_img = self.rbx_image_blank # Set to blank image if source topic is cleared.
-          
-          rospy.set_param('~rbx/image_source', self.rbx_info.image_source)
         if not rospy.is_shutdown():
             #rospy.loginfo(self.rbx_info)
             self.rbx_info_pub.publish(self.rbx_info)
@@ -1081,7 +1049,7 @@ class ROSRBXRobotIF:
             self.rbx_status_pub.publish(self.rbx_status)
             self.rbx_status_str_pub.publish(status_str_msg)
 
-       # Create ROS Image message
+        # Create ROS Image message
         cv2_img = copy.deepcopy(self.cv2_img) # Initialize status image
         # Overlay status info on image
         if self.rbx_info.image_status_overlay:
@@ -1106,6 +1074,31 @@ class ROSRBXRobotIF:
             # You can view the enhanced_2D_image topic at 
             # //192.168.179.103:9091/ in a connected web browser
         self.save_img2file('image',cv2_img,img_out_msg.header.stamp)
+
+        ## Update image source topic and subscriber if changed from last time.
+        image_source = rospy.get_param('~rbx/image_source', self.init_image_source)
+        image_topic = nepi_ros.find_topic(image_source)
+        if image_topic != "":
+          if image_topic != self.rbx_image_source_last:
+              if self.rbx_image_sub != None:
+                  try:
+                    rospy.loginfo("RBX_IF: Unsubscribing from image source: " + image_topic)
+                    self.rbx_image_sub.unregister()
+                    self.rbx_image_sub = None
+                    time.sleep(1)
+                  except Exception as e:
+                    rospy.loginfo(e)
+          if self.rbx_image_sub == None:
+            rospy.loginfo("RBX_IF: Subscribing to image topic: " + image_topic)
+            self.rbx_image_sub = rospy.Subscriber(image_topic, Image, self.imageSubscriberCb, queue_size = 1)
+            rospy.set_param('~rbx/image_source', image_topic)
+        else:
+              image_topic = "None"
+        if image_topic == "None":
+              self.cv2_img = self.rbx_image_blank # Set to blank image if source topic is cleared.
+        # Set info.image_source value
+        self.rbx_info.image_source = image_topic
+        self.rbx_image_source_last = image_topic
  
  
         
@@ -1252,10 +1245,10 @@ class ROSRBXRobotIF:
     # Converted to Local ENU Frame before sending
     # Local Body Position Setpoint Function use these body relative x,y,z,yaw conventions
     # x+ axis is forward
-    # y+ axis is right
-    # z+ axis is down
+    # y+ axis is left
+    # z+ axis is up
     # Only yaw orientation updated
-    # yaw+ clockwise, yaw- counter clockwise from x axis (0 degrees faces x+ and rotates positive using right hand rule around z+ axis down)
+    # yaw+ counter clockwise from x axis (0 degrees faces x+ and rotates using right hand rule around z+ axis down)
     #####################################################
     def setpoint_position_local_body(self,setpoint_position):
       # setpoint_position is [X_BODY_METERS, Y_BODY_METERS, Z_BODY_METERS, YEW_BODY_DEGREES]
@@ -1274,17 +1267,18 @@ class ROSRBXRobotIF:
       #rospy.loginfo("RBX_IF: Start Location WSG84 geopoint")
       #rospy.loginfo("RBX_IF:  Lat, Long, Alt")
       #rospy.loginfo(["%.2f" % start_geopoint_wgs84[0],"%.2f" % start_geopoint_wgs84[1],"%.2f" % start_geopoint_wgs84[2]])
-      start_position_ned_m = list(self.current_position_ned_m)
-      rospy.loginfo("RBX_IF: Start Position NED degs")
+      start_position_enu_m = list(self.current_position_enu_m)
+      rospy.loginfo("RBX_IF: Start Position ENU degs")
       rospy.loginfo("RBX_IF:  X, Y, Z")
-      rospy.loginfo(["%.2f" % start_position_ned_m[0],"%.2f" % start_position_ned_m[1],"%.2f" % start_position_ned_m[2]])   
-      start_orientation_ned_degs=list(self.current_orientation_ned_degs)
-      rospy.loginfo("RBX_IF: Start Orientation NED degs")
+      rospy.loginfo(["%.2f" % start_position_enu_m[0],"%.2f" % start_position_enu_m[1],"%.2f" % start_position_enu_m[2]])   
+      start_orientation_enu_degs=list(self.current_orientation_enu_degs)
+      rospy.loginfo("RBX_IF: Start Orientation ENU degs")
       rospy.loginfo("RBX_IF:  Roll, Pitch, Yaw")
-      rospy.loginfo(["%.2f" % start_orientation_ned_degs[0],"%.2f" % start_orientation_ned_degs[1],"%.2f" % start_orientation_ned_degs[2]])
-      start_yaw_ned_deg = start_orientation_ned_degs[2]
-      rospy.loginfo("RBX_IF: Start Yaw NED degs")
-      rospy.loginfo(start_yaw_ned_deg) 
+      rospy.loginfo(["%.2f" % start_orientation_enu_degs[0],"%.2f" % start_orientation_enu_degs[1],"%.2f" % start_orientation_enu_degs[2]])
+
+      start_yaw_enu_deg = start_orientation_enu_degs[2]
+      rospy.loginfo("RBX_IF: Start Yaw ENU degs")
+      rospy.loginfo(start_yaw_enu_deg) 
       start_heading_deg=self.current_heading_deg
       #rospy.loginfo("RBX_IF: Start Heading degs")
       #rospy.loginfo(start_heading_deg)   
@@ -1302,43 +1296,42 @@ class ROSRBXRobotIF:
       # Condition Orienation Input
       input_yaw_body_deg = setpoint_position[3]
       rospy.loginfo("RBX_IF: Yaw Input Body Degrees")
-      rospy.loginfo(["%.2f" % input_yaw_body_deg])
-      new_yaw_body_deg = input_yaw_body_deg
-      # Condition to +-180 deg
-      if new_yaw_body_deg > 180:
-        new_yaw_body_deg = new_yaw_body_deg - 360
-      #rospy.loginfo("RBX_IF: Yaw Input Conditioned Body Degrees")
-      #rospy.loginfo(["%.2f" % new_yaw_body_deg])      
+      rospy.loginfo(["%.2f" % input_yaw_body_deg])   
       ##############################################
-      # Convert Body Data to NED Data
+      # Convert Body Data to ENU Data
       ##############################################
-      # Set new yaw orientation in NED degrees
-      offset_ned_m = nepi_nav.convert_point_body2ned(new_point_body_m,start_yaw_ned_deg)
-      #rospy.loginfo("RBX_IF: Point Goal Offsets NED Meters")
-      #rospy.loginfo("RBX_IF:  X, Y, Z")
-      #rospy.loginfo(["%.2f" % offset_ned_m[0],"%.2f" % offset_ned_m[1],"%.2f" % offset_ned_m[2]])
-      new_x_ned_m = start_position_ned_m[0] + offset_ned_m[0]
-      new_y_ned_m = start_position_ned_m[1] + offset_ned_m[1]
-      new_z_ned_m = start_position_ned_m[2] + offset_ned_m[2]
-      new_point_ned_m = [new_x_ned_m,new_y_ned_m,new_z_ned_m]
-      rospy.loginfo("RBX_IF: Point Goal NED X, Y, Z in Meters")
-      rospy.loginfo(["%.2f" % new_point_ned_m[0],"%.2f" % new_point_ned_m[1],"%.2f" % new_point_ned_m[2]])
-      new_yaw_ned_deg = nepi_nav.convert_yaw_body2ned(new_yaw_body_deg,start_yaw_ned_deg)
-      rospy.loginfo("RBX_IF: Yaw Goal NED Degrees")
-      rospy.loginfo(["%.2f" % new_yaw_ned_deg])
+      # Set new yaw orientation in ENU degrees
+      offset_enu_m = nepi_nav.convert_point_body2enu(new_point_body_m,start_yaw_enu_deg)
+      rospy.loginfo("RBX_IF: Point Goal Offsets ENU Meters")
+      rospy.loginfo("RBX_IF:  X, Y, Z")
+      rospy.loginfo(["%.2f" % offset_enu_m[0],"%.2f" % offset_enu_m[1],"%.2f" % offset_enu_m[2]])
+      new_x_enu_m = start_position_enu_m[0] + offset_enu_m[0]
+      new_y_enu_m = start_position_enu_m[1] + offset_enu_m[1]
+      new_z_enu_m = start_position_enu_m[2] + offset_enu_m[2]
+      new_position_enu_m = [new_x_enu_m,new_y_enu_m,new_z_enu_m]
+      rospy.loginfo("RBX_IF: Point Goal ENU X, Y, Z in Meters")
+      rospy.loginfo(["%.2f" % new_position_enu_m[0],"%.2f" % new_position_enu_m[1],"%.2f" % new_position_enu_m[2]])
+
+      new_yaw_enu_deg = start_yaw_enu_deg + input_yaw_body_deg
+        # Condition to +-180 deg
+      if new_yaw_enu_deg > 180:
+        new_yaw_enu_deg = new_yaw_enu_deg - 360
+      elif new_yaw_enu_deg < -180:
+        new_yaw_enu_deg = 360 + new_yaw_enu_deg
+      rospy.loginfo("RBX_IF: Yaw Goal ENU Degrees")
+      rospy.loginfo(["%.2f" % new_yaw_enu_deg])
       ##############################################
-      # Convert NED Data to ENU Data
+      # Create Point and Pose Data
       ##############################################
       # New Point ENU in meters
       new_point_enu_m=Point()
-      new_point_enu_m.x = new_point_ned_m[1]
-      new_point_enu_m.y = new_point_ned_m[0]
-      new_point_enu_m.z = - new_point_ned_m[2]
+      new_point_enu_m.x = offset_enu_m[0]
+      new_point_enu_m.y = offset_enu_m[1]
+      new_point_enu_m.z = offset_enu_m[2]
       rospy.loginfo("RBX_IF: Position Goal ENU X, Y, Z in Meters")
       rospy.loginfo(["%.2f" % new_point_enu_m.x,"%.2f" % new_point_enu_m.y,"%.2f" % new_point_enu_m.z])
 
-      new_yaw_enu_deg = nepi_nav.convert_yaw_ned2enu(new_yaw_ned_deg)
-      new_orientation_enu_deg = [start_orientation_ned_degs[0],start_orientation_ned_degs[1],new_yaw_enu_deg]
+      new_orientation_enu_deg = [start_orientation_enu_degs[0],start_orientation_enu_degs[1],new_yaw_enu_deg]
       rospy.loginfo("RBX_IF: Orienation Goal ENU  Roll, Pitch, Yaw in Degrees")
       rospy.loginfo(["%.2f" % new_orientation_enu_deg[0],"%.2f" % new_orientation_enu_deg[1],"%.2f" % new_orientation_enu_deg[2]])
       ##############################################
@@ -1357,7 +1350,7 @@ class ROSRBXRobotIF:
       while setpoint_position_local_point_reached is False or setpoint_position_local_yaw_reached is False and not rospy.is_shutdown():  # Wait for setpoint goal to be set
         if self.checkStopFunction() is True:
             rospy.loginfo("RBX_IF: Setpoint Position received Stop Command")
-            new_point_ned_m = copy.deepcopy(self.current_position_ned_m)
+            new_position_enu_m = copy.deepcopy(self.current_position_enu_m)
         if timeout_timer > timeout_sec:
           self.update_error_msg("Setpoint cmd timed out")
           cmd_success = False
@@ -1365,48 +1358,51 @@ class ROSRBXRobotIF:
         time.sleep(time2sleep) # update setpoint position at 50 Hz
         stabilize_timer=stabilize_timer+time2sleep # Increment rospy.loginfo message timer
         timeout_timer = timeout_timer+time2sleep
-        # Calculate setpoint position ned errors    
-        point_ned_error_m = np.array(self.current_position_ned_m) - np.array(new_point_ned_m)
+        # Calculate setpoint position enu errors    
+        point_body_errors_m = [0,0,0] # initialize for later
+        point_enu_errors_m = np.array(self.current_position_enu_m) - np.array(new_position_enu_m)
         for ind in range(3):
           if input_point_body_m == -999: # Ignore error check if set to current
-            point_ned_error_m[ind] = 0
-        max_point_ned_error_m = np.max(np.abs(point_ned_error_m))
-        # Calculate setpoint yaw ned error
+            point_enu_errors_m[ind] = 0
+        max_point_enu_errors_m = np.max(np.abs(point_enu_errors_m))
+        # Calculate setpoint yaw enu error
         if input_yaw_body_deg == -999: # Ignore error check if set to current
           setpoint_position_local_yaw_reached = True
-          max_yaw_ned_error_deg = 0
+          max_yaw_enu_error_deg = 0
         else:
-          cur_yaw_ned_deg = self.current_orientation_ned_degs[2]
-          yaw_ned_error_deg =  cur_yaw_ned_deg - new_yaw_ned_deg
-          max_yaw_ned_error_deg = abs(yaw_ned_error_deg)
+          cur_yaw_enu_deg = self.current_orientation_enu_degs[2]
+          yaw_enu_error_deg =  cur_yaw_enu_deg - new_yaw_enu_deg
+          max_yaw_enu_error_deg = abs(yaw_enu_error_deg)
         # Check for setpoint position local point goal
         if  setpoint_position_local_point_reached is False:
           if stabilize_timer > self.rbx_info.error_bounds.min_stabilize_time_s:
             max_point_errors = max(point_errors) # Get max from error window
-            point_errors = [max_point_ned_error_m] # reset running list of errors
+            point_errors = [max_point_enu_errors_m] # reset running list of errors
             if max_point_errors < self.rbx_info.error_bounds.max_distance_error_m:
               rospy.loginfo("RBX_IF: Position Setpoint Reached")
               setpoint_position_local_point_reached = True
           else:
-            point_errors.append(max_point_ned_error_m) # append last
+            point_errors.append(max_point_enu_errors_m) # append last
         # Check for setpoint position yaw point goal
         if  setpoint_position_local_yaw_reached is False:
           if stabilize_timer > self.rbx_info.error_bounds.min_stabilize_time_s:
             max_yaw_errors = max(yaw_errors) # Get max from error window
-            yaw_errors = [max_yaw_ned_error_deg] # reset running list of errors
+            yaw_errors = [max_yaw_enu_error_deg] # reset running list of errors
             if max_yaw_errors < self.rbx_info.error_bounds.max_rotation_error_deg:
               rospy.loginfo("RBX_IF: Yaw Setpoint Reached")
               setpoint_position_local_yaw_reached = True
           else:
-            yaw_errors.append(max_yaw_ned_error_deg) # append last
+            yaw_errors.append(max_yaw_enu_error_deg) # append last
         # Reset rospy.loginfo timer if past
         if stabilize_timer > self.rbx_info.error_bounds.min_stabilize_time_s:
           stabilize_timer=0 # Reset rospy.loginfo timer
-        self.update_current_errors(  [point_ned_error_m[0],point_ned_error_m[1],point_ned_error_m[2],0,0,0,max_yaw_ned_error_deg] )
+        point_body_errors_m = nepi_nav.convert_point_enu2body(point_enu_errors_m,start_yaw_enu_deg)
+        self.update_current_errors(  [point_body_errors_m[1],point_body_errors_m[0],point_body_errors_m[2],0,0,0,max_yaw_enu_error_deg] )
       if cmd_success:
         rospy.loginfo("RBX_IF: Setpoint Reached")
         rospy.loginfo("RBX_IF: ************************")
-      self.update_current_errors(  [point_ned_error_m[0],point_ned_error_m[1],point_ned_error_m[2],0,0,0,max_yaw_ned_error_deg] )
+      point_body_errors_m = nepi_nav.convert_point_enu2body(point_enu_errors_m,start_yaw_enu_deg)
+      self.update_current_errors(  [point_body_errors_m[1],point_body_errors_m[0],point_body_errors_m[2],0,0,0,max_yaw_enu_error_deg] )
       return cmd_success
 
 

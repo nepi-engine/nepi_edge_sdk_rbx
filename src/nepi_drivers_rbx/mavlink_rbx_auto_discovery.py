@@ -37,7 +37,6 @@ mav_port_entry = {
             "compid": None,     
             "node_name": None,  
             "mavlink_subproc": None,
-            "mavqgc_subproc": None,
             "ardu_subproc": None,
             "fgps_subproc": None
 }
@@ -48,7 +47,6 @@ mav_ip_entry = {
             "compid": None,     
             "node_name": None,  
             "mavlink_subproc": None,
-            "mavqgc_subproc": None,
             "ardu_subproc": None,
             "fgps_subproc": None
 }
@@ -63,15 +61,107 @@ def mavlink_discover(active_port_list):
   global mav_port_dict
   global mav_ip_dict
   
-  new_ip_entry = copy.deepcopy(mav_ip_entry)
-
-
-  node_name = rospy.get_name().split('/')[-1] + '/mavlink_auto_discovery'
   base_namespace = rospy.get_namespace()
+
+ # Purge Unresponsive Connections
+  port_purge_list = []
+  for port in mav_port_dict.keys():
+    purge_node = False
+    mav_entry = mav_port_dict[port]
+
+    sysid = mav_entry["sysid"] 
+    compid = mav_entry["compid"]   
+    mavlink_node = mav_entry["node_name"]
+    mavlink_subproc = mav_entry["mavlink_subproc"] 
+    ardu_subproc = mav_entry["ardu_subproc"] 
+    fgps_subproc = mav_entry["fgps_subproc"] 
+
+    full_node_name = base_namespace + '/' + mavlink_node
+    
+    # Check that the mavlink_node process is still running
+    if mavlink_subproc.poll() is not None:
+      rospy.logwarn("Mavlink_AD: Node process for %s is no longer running... purging from managed list", mavlink_node)
+    #rospy.logwarn("Mavlink_AD: Node process for %s is no longer running... purging from managed list", ardu_node)
+      purge_node = True
+    # Check that the node's port still exists
+    elif port not in active_port_list:
+      rospy.logwarn("Mavlink_AD: Port %s associated with node %s no longer detected", port, mavlink_node)
+      purge_node = True
+    else:
+      # Now check that the node is actually responsive
+      # Use a service call so that we can provide are assured of synchronous response
+      vehicle_info_service_name = full_node_name + '/vehicle_info_get'
+      vehicle_info_query = rospy.ServiceProxy(vehicle_info_service_name, VehicleInfoGet)
+      try:
+        # We don't actually care about the contents of the response at this point, but we might in the future for
+        # additional aliveness check logic:
+        #response = capability_service()
+        vehicle_info_query(sysid=sysid, compid=compid, get_all=False)
+ 
+      except Exception as e: # Any exception indicates that the service call failed
+        rospy.logwarn("Mavlink_AD Node %s is no longer responding to vehicle info queries (%s)", mavlink_node, str(e))
+        purge_node = True
+
+    if purge_node:
+      rospy.logwarn("Mavlink_AD: Purging node %s", mavlink_node)
+
+      if port in active_port_list:
+        rospy.logwarn("Mavlink_AD: Removing port %s from active list as part of node purging", port)
+        active_port_list.remove(port)
+
+      if mavlink_subproc.poll() is None:
+        rospy.logwarn("Mavlink_AD: Issuing sigterm to process for %s as part of node purging", mavlink_node)
+        mavlink_subproc.kill()
+        # Turns out that is not always enough to get the node out of the ros system, so we use rosnode cleanup, too
+        # rosnode cleanup won't find the disconnected node until the process is fully terminated
+        try:
+          mavlink_subproc.wait(timeout=10)
+        except:
+          pass        
+          
+
+        if ardu_subproc.poll() is None:
+          rospy.logwarn("Mavlink_AD: Issuing sigterm to process for %s as part of node purging", "ardupilot_node")
+          ardu_subproc.kill()
+          # Turns out that is not always enough to get the node out of the ros system, so we use rosnode cleanup, too
+          # rosnode cleanup won't find the disconnected node until the process is fully terminated
+          try:
+            ardu_subproc.wait(timeout=10)
+          except:
+            pass
+
+        if fgps_subproc.poll() is None:
+          rospy.logwarn("Mavlink_AD: Issuing sigterm to process for %s as part of node purging", "fgps_gps_node")
+          fgps_subproc.kill()
+          # Turns out that is not always enough to get the node out of the ros system, so we use rosnode cleanup, too
+          # rosnode cleanup won't find the disconnected node until the process is fully terminated
+          try:
+            fgps_subproc.wait(timeout=10)
+          except:
+            pass
+
+        
+        cleanup_proc = subprocess.Popen(['rosnode', 'cleanup'], stdin=subprocess.PIPE)
+        try:
+          cleanup_proc.communicate(input=bytes("y\r\n", 'utf-8'), timeout=10)
+          cleanup_proc.wait(timeout=10) 
+        except Exception as e:
+          rospy.logwarn("Mavlink_AD: rosnode cleanup failed (%s)", str(e))
+
+      port_purge_list.append(port) 
+
+    # Clean up the globals  
+  for port in port_purge_list:
+    del  mav_port_dict[port]
+
+  # Now look for new connections
+  new_ip_entry = copy.deepcopy(mav_ip_entry)
+  node_name = rospy.get_name().split('/')[-1] + '/mavlink_auto_discovery'
   # Find serial ports
   rospy.logdebug(node_name + ": Looking for serial ports on device")
   port_list = []
   ports = serial.tools.list_ports.comports()
+  purge_list = []
   for loc, desc, hwid in sorted(ports):
     rospy.logdebug(node_name + ": Found serial_port at: " + loc)
     port_list.append(loc)
@@ -80,8 +170,6 @@ def mavlink_discover(active_port_list):
     if port_str not in active_port_list:
       found_mavlink = False
       sys_id_mavlink = 0
-      found_mavqgc = False
-      sys_id_mavqgc = 0
       for baud_int in BAUDRATE_LIST:
         rospy.logdebug(node_name + ": Connecting to serial port " + port_str + " with baudrate: " + str(baud_int))
         try:
@@ -189,7 +277,8 @@ def mavlink_discover(active_port_list):
           vehicle_info_service_name = mavlink_node_namespace + '/vehicle_info_get'
           try:
             rospy.wait_for_service(vehicle_info_service_name, timeout=10) # TODO: 10 seconds always sufficient for the driver?
-          
+
+
             # No exception, all good
             active_port_list.append(port_str)
 
@@ -202,114 +291,13 @@ def mavlink_discover(active_port_list):
             mav_entry["fgps_subproc"] = fgps_subproc
 
             mav_port_dict[port_str] = mav_entry
-
+ 
             break # Don't check any more baud rates since this one was already successful
           except:
             rospy.logerr("%s: Failed to start %s", node_name, mavlink_node_name)
+
   
-  # Finally check for and purge any nodes no longer running
-  port_purge_list = []
-  for port in mav_port_dict.keys():
-    purge_node = False
-    mav_entry = mav_port_dict[port]
-
-    sysid = mav_entry["sysid"] 
-    compid = mav_entry["compid"]   
-    mavlink_node = mav_entry["node_name"]
-    mavlink_subproc = mav_entry["mavlink_subproc"] 
-    mavqgc_subproc = mav_entry["mavqgc_subproc"] 
-    ardu_subproc = mav_entry["ardu_subproc"] 
-    fgps_subproc = mav_entry["fgps_subproc"] 
-
-    full_node_name = base_namespace + '/' + mavlink_node
-    
-    # Check that the mavlink_node process is still running
-    if mavlink_subproc.poll() is not None:
-      rospy.logwarn("Mavlink_AD: Node process for %s is no longer running... purging from managed list", mavlink_node)
-    #rospy.logwarn("Mavlink_AD: Node process for %s is no longer running... purging from managed list", ardu_node)
-      purge_node = True
-    # Check that the node's port still exists
-    elif port not in active_port_list:
-      rospy.logwarn("Mavlink_AD: Port %s associated with node %s no longer detected", port, mavlink_node)
-      purge_node = True
-    else:
-      # Now check that the node is actually responsive
-      # Use a service call so that we can provide are assured of synchronous response
-      vehicle_info_service_name = full_node_name + '/vehicle_info_get'
-      vehicle_info_query = rospy.ServiceProxy(vehicle_info_service_name, VehicleInfoGet)
-      try:
-        # We don't actually care about the contents of the response at this point, but we might in the future for
-        # additional aliveness check logic:
-        #response = capability_service()
-        vehicle_info_query(sysid=sysid, compid=compid, get_all=False)
  
-      except Exception as e: # Any exception indicates that the service call failed
-        rospy.logwarn("Mavlink_AD Node %s is no longer responding to vehicle info queries (%s)", mavlink_node, str(e))
-        purge_node = True
-
-    if purge_node:
-      rospy.logwarn("Mavlink_AD: Purging node %s", mavlink_node)
-
-      if port in active_port_list:
-        rospy.logwarn("Mavlink_AD: Removing port %s from active list as part of node purging", port)
-        active_port_list.remove(port)
-
-      if mavlink_subproc.poll() is None:
-        rospy.logwarn("Mavlink_AD: Issuing sigterm to process for %s as part of node purging", mavlink_node)
-        mavlink_subproc.kill()
-        # Turns out that is not always enough to get the node out of the ros system, so we use rosnode cleanup, too
-        # rosnode cleanup won't find the disconnected node until the process is fully terminated
-        try:
-          mavlink_subproc.wait(timeout=10)
-        except:
-          pass        
-          
-
-        if mavqgc is not None:
-          if mavqgc_subproc.poll() is None:
-            rospy.logwarn("Mavlink_AD: Issuing sigterm to process for %s as part of node purging", "mavqgc_node")
-            mavqgc_subproc.kill()
-            # Turns out that is not always enough to get the node out of the ros system, so we use rosnode cleanup, too
-            # rosnode cleanup won't find the disconnected node until the process is fully terminated
-            try:
-              mavqgc_subproc.wait(timeout=10)
-            except:
-              pass
-
-
-        if ardu_subproc.poll() is None:
-          rospy.logwarn("Mavlink_AD: Issuing sigterm to process for %s as part of node purging", "ardupilot_node")
-          ardu_subproc.kill()
-          # Turns out that is not always enough to get the node out of the ros system, so we use rosnode cleanup, too
-          # rosnode cleanup won't find the disconnected node until the process is fully terminated
-          try:
-            ardu_subproc.wait(timeout=10)
-          except:
-            pass
-
-        if fgps_subproc.poll() is None:
-          rospy.logwarn("Mavlink_AD: Issuing sigterm to process for %s as part of node purging", "fgps_gps_node")
-          fgps_subproc.kill()
-          # Turns out that is not always enough to get the node out of the ros system, so we use rosnode cleanup, too
-          # rosnode cleanup won't find the disconnected node until the process is fully terminated
-          try:
-            fgps_subproc.wait(timeout=10)
-          except:
-            pass
-
-        
-        cleanup_proc = subprocess.Popen(['rosnode', 'cleanup'], stdin=subprocess.PIPE)
-        try:
-          cleanup_proc.communicate(input=bytes("y\r\n", 'utf-8'), timeout=10)
-          cleanup_proc.wait(timeout=10) 
-        except Exception as e:
-          rospy.logwarn("Mavlink_AD: rosnode cleanup failed (%s)", str(e))
-
-      port_purge_list.append(port) 
-
-    # Clean up the globals  
-    for port in port_purge_list:
-      del  mav_port_dict[port]
   
   return active_port_list
 

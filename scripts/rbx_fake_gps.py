@@ -50,6 +50,7 @@ import sys
 import numpy as np
 import math
 import random
+import copy
 from nepi_edge_sdk_base import nepi_ros 
 from nepi_edge_sdk_base import nepi_nav
 from nepi_edge_sdk_base import nepi_rbx
@@ -58,6 +59,7 @@ from std_msgs.msg import Empty, Bool, UInt8, Int8, Float32, Float64, String, Hea
 from geometry_msgs.msg import Point
 from geographic_msgs.msg import GeoPoint
 from sensor_msgs.msg import NavSatFix
+from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Point, Pose, Quaternion, Twist, Vector3, PoseStamped
 from nepi_ros_interfaces.msg import RBXGotoPose, RBXGotoPosition, RBXGotoLocation
 from nepi_ros_interfaces.srv import NavPoseQuery, NavPoseQueryRequest
@@ -80,6 +82,11 @@ class RBXFakeGPS:
   #Homeup Location
   # [Lat, Long, Altitude_WGS84]
   FAKE_GPS_START_GEOPOINT_WGS84 = [46.6540828,-122.3187578,0.0]
+  ZERO_POINT = Point()
+  ZERO_POINT.x = 0
+  ZERO_POINT.y = 0
+  ZERO_POINT.z = 0
+  
 
   #GPS Setup
   SAT_COUNT = 20
@@ -92,6 +99,11 @@ class RBXFakeGPS:
   # Create shared class variables and thread locks
   fake_gps_enabled = False
   stop_triggered = False
+  
+  reset_point = copy.deepcopy(ZERO_POINT)
+  current_point = copy.deepcopy(ZERO_POINT)
+  new_point = copy.deepcopy(ZERO_POINT)
+
 
 
   ###################################################
@@ -108,6 +120,7 @@ class RBXFakeGPS:
     self.rbx_cap_actions = []
     self.current_location_wgs84_geo = None
     self.current_heading_deg = 0
+    self.current_yaw_enu_deg = 0
     self.current_home_wgs84_geo = None
     self.navpose_update_interval = 0.1
     self.fake_gps_ready = True
@@ -145,6 +158,10 @@ class RBXFakeGPS:
       self.send_mavlink_gps_msg = False
     
     # Start fake gps publishing
+    self.odom_msg = Odometry()
+    #self.odom_msg.header.frame_id = self.name + '_fixed_frame'
+    #self.odom_msg.child_frame_id = self.name + '_rotating_frame'
+    self.fake_odom_pub = rospy.Publisher("~odom", Odometry, queue_size=1)
     self.fake_gps_pub = rospy.Publisher("~gps_fix", NavSatFix, queue_size=1)
     time.sleep(1)
     rospy.Timer(rospy.Duration(self.gps_publish_interval_sec), self.fake_gps_pub_callback)
@@ -195,8 +212,15 @@ class RBXFakeGPS:
       navsatfix.longitude = self.current_location_wgs84_geo.longitude
       navsatfix.altitude = self.current_location_wgs84_geo.altitude
       #rospy.loginfo(navsatfix)
+      # Calculate position change from reset position
+      self.odom_msg.header.stamp = rospy.Time.now()
+      self.odom_msg.pose.pose.position.x = self.current_point.x
+      self.odom_msg.pose.pose.position.y = self.current_point.y
+      self.odom_msg.pose.pose.position.z = self.current_point.z
+
       if not rospy.is_shutdown():
         self.fake_gps_pub.publish(navsatfix)
+        self.fake_odom_pub.publish(self.odom_msg)
       # Send Mavlink GPS Override if needed
       if self.send_mavlink_gps_msg:
         hilgps=HilGPS()
@@ -213,6 +237,10 @@ class RBXFakeGPS:
         if not rospy.is_shutdown():
           self.mavlink_pub.publish(hilgps)
 
+
+
+
+
   #######################
   # Node Process Functions
   ### function to simulate move to new global geo position
@@ -223,18 +251,27 @@ class RBXFakeGPS:
     rospy.loginfo("RBX_FAKE_GPS: Fake GPS Moving FROM: " + str(loc.latitude) + ", " + str(loc.longitude) + ", " + str(loc.altitude)) 
     loc = geopoint_msg
     rospy.loginfo("RBX_FAKE_GPS: T0: " + str(loc.latitude) + ", " + str(loc.longitude) + ", " + str(loc.altitude)) 
+
     org_geo=np.array([self.current_location_wgs84_geo.latitude, \
                       self.current_location_wgs84_geo.longitude, self.current_location_wgs84_geo.altitude])
-    cur_geo = org_geo
+    cur_geo = copy.deepcopy(org_geo)
     new_geo=np.array([geopoint_msg.latitude, geopoint_msg.longitude, geopoint_msg.altitude])
     for ind, val in enumerate(new_geo):
       if new_geo[ind] == -999.0: # Use current
         new_geo[ind]=org_geo[ind]
     delta_geo = new_geo - org_geo
+    move_dist_m = nepi_nav.distance_geopoints(org_geo,new_geo)
+
+    org_point = np.array([self.current_point.x,self.current_point.y,self.current_point.z])
+    cur_point = copy.deepcopy(org_point)
+    rospy.loginfo("RBX_FAKE_GPS: cur point movement: " + str(org_point))
+    new_point = np.array([org_point[0] + self.new_point.x, org_point[1] + self.new_point.y, org_point[2] + self.new_point.z]) 
+    rospy.loginfo("RBX_FAKE_GPS: new point movement: " + str(new_point))
+    delta_point = new_point - org_point
+    rospy.loginfo("RBX_FAKE_GPS: delta point movement: " + str(delta_point))
+
     #rospy.loginfo("RBX_FAKE_GPS: TO:")
     #rospy.loginfo(delta_geo)
-    
-    move_dist_m = nepi_nav.distance_geopoints(org_geo,new_geo)
     if move_dist_m > 0 and self.checkStopTrigger() == False:
       move_time = self.MOVE_UPDATE_TIME_SEC_PER_METER * move_dist_m
       move_steps = move_time * self.GPS_PUB_RATE_HZ
@@ -258,7 +295,15 @@ class RBXFakeGPS:
         self.current_location_wgs84_geo.latitude = cur_geo[0]
         self.current_location_wgs84_geo.longitude = cur_geo[1]
         self.current_location_wgs84_geo.altitude = cur_geo[2]
-        #if rospy.loginfo_timer > 0.5:
+
+
+        cur_point_step = [delta_point[0] * val, delta_point[1] * val, delta_point[2] * val]
+        cur_point = org_point + cur_point_step
+
+        self.current_point.x = cur_point[0]
+        self.current_point.y = cur_point[1]
+        self.current_point.z = cur_point[2]
+
           #rospy.loginfo("RBX_FAKE_GPS: ")
           #rospy.loginfo("RBX_FAKE_GPS: Updated to")
           #rospy.loginfo(self.current_location_wgs84_geo)
@@ -287,6 +332,7 @@ class RBXFakeGPS:
       get_navpose_service = rospy.ServiceProxy(self.nepi_nav_service_name, NavPoseQuery)
       nav_pose_response = get_navpose_service(NavPoseQueryRequest())
       self.current_heading_deg = nav_pose_response.nav_pose.heading.heading
+      self.current_yaw_enu_deg = nepi_nav.get_navpose_orientation_enu_degs(nav_pose_response)[2]
       #rospy.loginfo('')
       #rospy.loginfo("RBX_FAKE_GPS: Update current heading to: " + "%.2f" % (self.current_heading_deg))
     except Exception as e:
@@ -311,6 +357,7 @@ class RBXFakeGPS:
     rospy.loginfo("RBX_FAKE_GPS: Received Fake GPS Reset to Location Msg: " + geo_str)
     success = self.reset_gps_loc(geo_msg)
     if success:
+      self.reset_point = self.ZERO_POINT
       rospy.loginfo("RBX_FAKE_GPS: Reset Complete")
     return success
 
@@ -336,15 +383,17 @@ class RBXFakeGPS:
       self.stop_triggered = False
 
   ### Function to monitor RBX GoTo Position Command Topics
-  def fakeGPSGoPosCb(self,point_msg):
+  def fakeGPSGoPosCb(self,enu_point_msg):
     if self.fake_gps_enabled:
       self.checkStopTrigger() # Clear stop trigger
-      point_str = str(point_msg)
+      point_str = str(enu_point_msg)
       rospy.loginfo("RBX_FAKE_GPS: Recieved GoTo Position Message: " + point_str)
-      new_position = [point_msg.x,point_msg.y,point_msg.z]
+      self.new_point = enu_point_msg
+
+      new_enu_position = [enu_point_msg.x,enu_point_msg.y,enu_point_msg.z]
       rospy.loginfo("RBX_FAKE_GPS: Sending Fake GPS Setpoint Position Update")
-      new_geopoint_wgs84=nepi_nav.get_geopoint_at_body_point(self.current_location_wgs84_geo, \
-                                                    self.current_heading_deg, new_position)    
+      new_geopoint_wgs84=nepi_nav.get_geopoint_at_enu_point(self.current_location_wgs84_geo, new_enu_position)  
+      new_geopoint_wgs84.altitude = new_enu_position[2]                                  
       self.move(new_geopoint_wgs84)
 
 
