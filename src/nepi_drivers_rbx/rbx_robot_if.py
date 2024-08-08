@@ -52,7 +52,7 @@ NEPI_BASE_NAMESPACE = nepi_ros.get_base_namespace()
 class ROSRBXRobotIF:
     # Default Global Values
     BAD_NAME_CHAR_LIST = [" ","/","'","-","$","#"]
-    STATUS_UPDATE_RATE_HZ = 3
+    STATUS_UPDATE_RATE_HZ = 2
     UPDATE_NAVPOSE_RATE_HZ = 10
     CHECK_SAVE_DATA_RATE_HZ = 40
     
@@ -114,6 +114,7 @@ class ROSRBXRobotIF:
         self.resetFactory()
 
     def resetFactory(self):
+        self.settings_if.resetFactorySettings()
         rospy.set_param('~rbx/device_name', self.factory_device_name)
         rospy.set_param('~rbx/max_error_m', self.FACTORY_GOTO_MAX_ERROR_M)
         rospy.set_param('~rbx/max_error_deg', self.FACTORY_GOTO_MAX_ERROR_DEG)
@@ -129,7 +130,6 @@ class ROSRBXRobotIF:
           for i in range(len(self.getMotorControlRatios())):
             mc.motor_ind = i
             self.setMotorControlRatio(mc)
-        self.settings_if.resetFactorySettings()
         self.updateFromParamServer()
         self.publishInfo()
 
@@ -573,6 +573,8 @@ class ROSRBXRobotIF:
 
 
     def updateFromParamServer(self):
+        if self.settings_if is not None:
+          self.settings_if.updateFromParamServer()
         if self.setFakeGPSFunction:
           fake_gps_enabled = rospy.get_param('~rbx/fake_gps_enabled', self.init_fake_gps_enabled)
           self.setFakeGPSFunction(fake_gps_enabled) 
@@ -583,10 +585,11 @@ class ROSRBXRobotIF:
           geo_home.longitude = home_location[1]
           geo_home.altitude = home_location[2]
           self.setHomeFunction(geo_home)
-        self.settings_if.updateFromParamServer()
 
   
     def setCurrentAsDefault(self):
+        if self.settings_if is not None:
+          self.settings_if.initializeParamServer(do_updates = False)
         pass # We only use the param server, no member variables to apply to param server
    
     def capabilities_query_callback(self, _):
@@ -1047,7 +1050,7 @@ class ROSRBXRobotIF:
         self.status_str_msg = status_str_msg
         if not rospy.is_shutdown():
             self.rbx_status_pub.publish(self.rbx_status)
-            self.rbx_status_str_pub.publish(status_str_msg)
+            self.rbx_status_str_pub.publish(str(status_str_msg))
 
         # Create ROS Image message
         cv2_img = copy.deepcopy(self.cv2_img) # Initialize status image

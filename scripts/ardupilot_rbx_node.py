@@ -129,6 +129,8 @@ class ArdupilotRBX:
   pos_sp_seq = 0
   loc_sp_seq = 0
 
+  gps_connected = False
+
   #######################
   ### Node Initialization
   def __init__(self):
@@ -473,6 +475,8 @@ class ArdupilotRBX:
       self.location_target = None
 
   def gotoPose(self,attitude_enu_degs):
+    att_str = str(attitude_enu_degs)
+    self.publishMsg("Recieved Pose setpoint command: " + att_str)
     # Create Setpoint Attitude Message
     attitude_enu_quat = nepi_nav.convert_rpy2quat(attitude_enu_degs)
     orientation_enu_quat = Quaternion()
@@ -497,6 +501,8 @@ class ArdupilotRBX:
     
 
   def gotoPosition(self,point_enu_m,orientation_enu_deg):
+    pos_str = str(point_enu_m)
+    self.publishMsg("Recieved Position setpoint command: " + pos_str)
     # Create PoseStamped Setpoint Local ENU Message
     orientation_enu_q = nepi_nav.convert_rpy2quat(orientation_enu_deg)
     orientation_enu_quat = Quaternion()
@@ -514,6 +520,8 @@ class ArdupilotRBX:
     self.fake_gps_goto_position_pub.publish(point_enu_m)
 
   def gotoLocation(self,geopoint_amsl,orientation_ned_deg):
+    loc_str = str(geopoint_amsl)
+    self.publishMsg("Recieved Location setpoint command: " + loc_str)
     # Create GeoPose Setpoint Global AMSL and Yaw NED Message
     orientation_ned_q = nepi_nav.convert_rpy2quat(orientation_ned_deg)
     orientation_ned_quat = Quaternion()
@@ -554,6 +562,8 @@ class ArdupilotRBX:
   ### Callback to publish RBX navpose data
   
   def gps_topic_callback(self,navsatfix_msg):
+      if navsatfix_msg.latitude != 0:
+        self.gps_connected = True
       #Fix Mavros Altitude Error
       if self.rbx_if is None:
         geoid_height_m = 0
@@ -608,31 +618,33 @@ class ArdupilotRBX:
     last_arm_value = self.mavlink_state.armed
     arm_cmd = CommandBoolRequest()
     arm_cmd.value = arm_value
-    self.publishMsg("Updating armed")
-    self.publishMsg(arm_value)
-    time.sleep(1) # Give time for other process to see busy
-    self.publishMsg("Waiting for armed value to set to " + str(arm_value))
-    timeout_sec = self.rbx_if.rbx_info.cmd_timeout
-    check_interval_s = 0.25
-    check_timer = 0
-    while self.mavlink_state.armed != arm_value and check_timer < timeout_sec and not rospy.is_shutdown():
-      self.arming_client.call(arm_cmd)
-      time.sleep(check_interval_s)
-      check_timer += check_interval_s
-      #self.publishMsg("Waiting for armed value to set")
-      #self.publishMsg("Set Value: " + str(arm_value))
-      #self.publishMsg("Cur Value: " + str(self.mavlink_state.armed))
-    if self.mavlink_state.armed == arm_value:
-      self.publishMsg("Armed value set to " + str(arm_value))
-      # Reset Home Location on Arming
-      if arm_value == True and arm_value != last_arm_value:
-        home_loc = GeoPoint()
-        home_loc.latitude = self.rbx_if.current_location_wgs84_geo[0]
-        home_loc.longitude = self.rbx_if.current_location_wgs84_geo[1]
-        home_loc.altitude = self.rbx_if.current_location_wgs84_geo[2]
-        self.home_location = home_loc
+    if arm_value == True and self.gps_connected == False:
+      self.publishMsg("Ignoring Arm command as no GPS is connected")
     else:
-      self.publishMsg("Setting Armed value timed-out")
+      self.publishMsg("Updating State to: " + str(arm_value))
+      time.sleep(1) # Give time for other process to see busy
+      self.publishMsg("Waiting for armed value to set to " + str(arm_value))
+      timeout_sec = self.rbx_if.rbx_info.cmd_timeout
+      check_interval_s = 0.25
+      check_timer = 0
+      while self.mavlink_state.armed != arm_value and check_timer < timeout_sec and not rospy.is_shutdown():
+        self.arming_client.call(arm_cmd)
+        time.sleep(check_interval_s)
+        check_timer += check_interval_s
+        #self.publishMsg("Waiting for armed value to set")
+        #self.publishMsg("Set Value: " + str(arm_value))
+        #self.publishMsg("Cur Value: " + str(self.mavlink_state.armed))
+      if self.mavlink_state.armed == arm_value:
+        # Reset Home Location on Arming
+        if arm_value == True and arm_value != last_arm_value:
+          home_loc = GeoPoint()
+          home_loc.latitude = self.rbx_if.current_location_wgs84_geo[0]
+          home_loc.longitude = self.rbx_if.current_location_wgs84_geo[1]
+          home_loc.altitude = self.rbx_if.current_location_wgs84_geo[2]
+          self.home_location = home_loc
+      else:
+        self.publishMsg("Setting Armed value timed-out")
+      self.publishMsg("Armed value set to " + str(arm_value))
   
 
   ### Function to set mavlink mode
@@ -685,6 +697,7 @@ class ArdupilotRBX:
   ## Action Function for setting arm state and sending takeoff command
   global launch
   def launch(self):
+    self.publishMsg("Recieved Launch cmd")
     cmd_success = False
     if "guided" in self.RBX_MODE_FUNCTIONS:
       cmd_success = self.setModeInd(self.RBX_MODE_FUNCTIONS.index("guided"))
@@ -734,6 +747,8 @@ class ArdupilotRBX:
       else:
         self.takeoff_complete = False
         self.publishMsg("Takeoff action timed-out with error: " + str(alt_error) + " meters")
+    else:
+      self.publishMsg("Ignoring Takeoff command as system is not Armed")
     return cmd_success
 
   ### Function for switching to STABILIZE mode
